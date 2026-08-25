@@ -710,22 +710,22 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
           </div>
 
           {/* Action Buttons: WhatsApp & Receipt */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
             <button
               type="button"
               onClick={handleWhatsApp}
-              className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
+              className="py-2.5 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
             >
-              <MessageCircle className="w-4 h-4" />
-              <span>Enviar comprovante pro cliente</span>
+              <MessageCircle className="w-4 h-4 text-emerald-400" />
+              <span>Enviar OS e Checklist (WhatsApp)</span>
             </button>
 
             <button
               type="button"
               onClick={() => onOpenReceipt({ ...os, descricao_servico: descricaoServico, valor: parseFloat(valor || '0'), garantia_fim: garantiaFim, garantia_cobertura: garantiaCobertura })}
-              className="py-3 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
+              className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
             >
-              <Receipt className="w-4 h-4 text-white" />
+              <Receipt className="w-4 h-4 text-slate-600" />
               <span>Visualizar Comprovante</span>
             </button>
           </div>

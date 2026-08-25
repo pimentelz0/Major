@@ -436,35 +436,37 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
             )}
           </div>
 
-          {/* Submit Actions */}
-          <div className="pt-3 space-y-2">
+          {/* Submit Actions - Compact & App Blue Theme */}
+          <div className="pt-3 flex flex-col gap-2">
             <button
               type="button"
+              id="btn-submit-whatsapp"
               onClick={() => handleSubmit(undefined, true)}
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 active:scale-[0.99]"
+              className="w-full py-2.5 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-semibold rounded-xl shadow transition-all flex items-center justify-center gap-2 text-xs sm:text-sm disabled:opacity-50 active:scale-[0.99]"
             >
               {loading ? (
-                <div className="flex items-center gap-2">
+                <span className="flex items-center justify-center gap-2">
                   <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   <span>Processando e enviando...</span>
-                </div>
+                </span>
               ) : (
-                <>
-                  <MessageCircle className="w-5 h-5 text-white" />
+                <span className="flex items-center justify-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-emerald-400" />
                   <span>Registrar e Enviar pro Cliente (OS + Checklist)</span>
-                </>
+                </span>
               )}
             </button>
 
             <button
               type="button"
+              id="btn-submit-only"
               onClick={() => handleSubmit(undefined, false)}
               disabled={loading}
-              className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50"
+              className="w-full py-1.5 px-3 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs disabled:opacity-50"
             >
-              <CheckCircle2 className="w-4 h-4 text-slate-500" />
-              <span>Apenas Registrar OS (Sem enviar WhatsApp)</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>Apenas salvar (sem enviar WhatsApp)</span>
             </button>
           </div>
         </form>

@@ -223,17 +223,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
         <div className="p-4 bg-slate-50/70 border-t border-slate-100 flex flex-col sm:flex-row gap-2 print:hidden">
           <button
             onClick={handleSendWhatsApp}
-            className="flex-1 py-3 px-4 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
+            className="flex-1 py-2.5 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
           >
-            <MessageCircle className="w-4 h-4" />
-            <span>Enviar comprovante pro cliente</span>
+            <MessageCircle className="w-4 h-4 text-emerald-400" />
+            <span>Enviar OS e Checklist no WhatsApp</span>
           </button>
 
           <button
             onClick={handlePrint}
-            className="py-3 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
+            className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
           >
-            <Printer className="w-4 h-4 text-white" />
+            <Printer className="w-4 h-4 text-slate-600" />
             <span>Imprimir</span>
           </button>
         </div>
