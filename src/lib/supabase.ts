@@ -411,7 +411,7 @@ export async function updateFullServiceOrder(
 }
 
 /**
- * Add a checklist photo to an existing OS (e.g. exit photo)
+ * Add a checklist photo to an existing OS (e.g. entry or exit photo)
  */
 export async function addChecklistPhoto(photoData: {
   service_order_id: string;
@@ -422,6 +422,44 @@ export async function addChecklistPhoto(photoData: {
 }): Promise<{ error: Error | null }> {
   try {
     const { error } = await supabase.from('checklist_photos').insert([photoData]);
+    if (error) {
+      return { error: new Error(error.message) };
+    }
+    return { error: null };
+  } catch (err: any) {
+    return { error: err };
+  }
+}
+
+/**
+ * Delete a specific checklist photo
+ */
+export async function deleteChecklistPhoto(photoId: string): Promise<{ error: Error | null }> {
+  try {
+    const { error } = await supabase.from('checklist_photos').delete().eq('id', photoId);
+    if (error) {
+      return { error: new Error(error.message) };
+    }
+    return { error: null };
+  } catch (err: any) {
+    return { error: err };
+  }
+}
+
+/**
+ * Update a checklist photo's metadata or type
+ */
+export async function updateChecklistPhoto(
+  photoId: string,
+  updates: {
+    tipo?: 'entrada' | 'saida';
+    categoria?: string;
+    observacao?: string;
+    url_foto?: string;
+  }
+): Promise<{ error: Error | null }> {
+  try {
+    const { error } = await supabase.from('checklist_photos').update(updates).eq('id', photoId);
     if (error) {
       return { error: new Error(error.message) };
     }

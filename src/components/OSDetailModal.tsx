@@ -18,8 +18,12 @@ import {
   AlertCircle,
   Pencil,
   RotateCcw,
+  Eye,
+  Check,
+  RefreshCw,
+  Tag,
 } from 'lucide-react';
-import type { OSWithDetails, OSStatus, DeviceChecklist } from '../types';
+import type { OSWithDetails, OSStatus, DeviceChecklist, ChecklistPhoto } from '../types';
 import { ChecklistEditor } from './ChecklistEditor';
 import { sendWhatsAppOS } from '../utils/whatsapp';
 import {
@@ -27,6 +31,8 @@ import {
   updateFullServiceOrder,
   deleteServiceOrder,
   addChecklistPhoto,
+  deleteChecklistPhoto,
+  updateChecklistPhoto,
   uploadChecklistPhoto,
   fileToDataUrl,
 } from '../lib/supabase';
@@ -57,7 +63,9 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
 }) => {
   if (!isOpen || !os) return null;
 
+  const entryPhotoInputRef = useRef<HTMLInputElement>(null);
   const exitPhotoInputRef = useRef<HTMLInputElement>(null);
+  const replacePhotoInputRef = useRef<HTMLInputElement>(null);
 
   // Edit Mode toggle
   const [isEditingFull, setIsEditingFull] = useState(false);
@@ -80,11 +88,20 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   const [checklistState, setChecklistState] = useState<DeviceChecklist>(os.checklist || {});
 
   // Photos state (local + remote)
-  const [photosList, setPhotosList] = useState(os.photos || []);
+  const [photosList, setPhotosList] = useState<ChecklistPhoto[]>(os.photos || []);
+  const [photoFilter, setPhotoFilter] = useState<'all' | 'entrada' | 'saida'>('all');
+
+  // Photo Editing / Viewing State
+  const [selectedPhotoForEdit, setSelectedPhotoForEdit] = useState<ChecklistPhoto | null>(null);
+  const [editPhotoTipo, setEditPhotoTipo] = useState<'entrada' | 'saida'>('entrada');
+  const [editPhotoObs, setEditPhotoObs] = useState('');
+  const [savingPhotoEdit, setSavingPhotoEdit] = useState(false);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
 
   // UI state
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [uploadingEntryPhoto, setUploadingEntryPhoto] = useState(false);
   const [uploadingExitPhoto, setUploadingExitPhoto] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -252,6 +269,56 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
     }
   };
 
+  // Handle Entry Photo Upload
+  const handleAddEntryPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    setUploadingEntryPhoto(true);
+    setError(null);
+
+    try {
+      const files = Array.from(e.target.files) as File[];
+      const newItems: ChecklistPhoto[] = [];
+
+      for (const file of files) {
+        const previewUrl = await fileToDataUrl(file);
+        const storageUrl = await uploadChecklistPhoto(file, os.id, 'entrada');
+
+        const photoPayload = {
+          service_order_id: os.id,
+          tipo: 'entrada' as const,
+          categoria: 'entrada',
+          url_foto: storageUrl || previewUrl,
+          observacao: 'Checklist de entrada do aparelho',
+        };
+
+        const { error: photoErr } = await addChecklistPhoto(photoPayload);
+        if (photoErr) console.warn(photoErr.message);
+
+        const newPhotoObj: ChecklistPhoto = {
+          id: `entry-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          service_order_id: os.id,
+          tipo: 'entrada',
+          categoria: 'entrada',
+          url_foto: storageUrl || previewUrl,
+          observacao: 'Checklist de entrada do aparelho',
+          criado_em: new Date().toISOString(),
+        };
+
+        newItems.push(newPhotoObj);
+      }
+
+      const updatedPhotos = [...photosList, ...newItems];
+      setPhotosList(updatedPhotos);
+      onUpdate({ ...os, photos: updatedPhotos });
+    } catch (err: any) {
+      setError('Erro ao enviar foto de entrada.');
+    } finally {
+      setUploadingEntryPhoto(false);
+      if (entryPhotoInputRef.current) entryPhotoInputRef.current.value = '';
+    }
+  };
+
   // Handle Exit Photo Upload
   const handleAddExitPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -260,32 +327,38 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
     setError(null);
 
     try {
-      const file = e.target.files[0];
-      const previewUrl = await fileToDataUrl(file);
-      const storageUrl = await uploadChecklistPhoto(file, os.id, 'saida');
+      const files = Array.from(e.target.files) as File[];
+      const newItems: ChecklistPhoto[] = [];
 
-      const photoPayload = {
-        service_order_id: os.id,
-        tipo: 'saida' as const,
-        categoria: 'saida',
-        url_foto: storageUrl || previewUrl,
-        observacao: 'Checklist de saída / entrega',
-      };
+      for (const file of files) {
+        const previewUrl = await fileToDataUrl(file);
+        const storageUrl = await uploadChecklistPhoto(file, os.id, 'saida');
 
-      const { error: photoErr } = await addChecklistPhoto(photoPayload);
-      if (photoErr) console.warn(photoErr.message);
+        const photoPayload = {
+          service_order_id: os.id,
+          tipo: 'saida' as const,
+          categoria: 'saida',
+          url_foto: storageUrl || previewUrl,
+          observacao: 'Checklist de saída / entrega',
+        };
 
-      const newPhotoObj = {
-        id: `exit-${Date.now()}`,
-        service_order_id: os.id,
-        tipo: 'saida' as const,
-        categoria: 'saida',
-        url_foto: storageUrl || previewUrl,
-        observacao: 'Checklist de saída / entrega',
-        criado_em: new Date().toISOString(),
-      };
+        const { error: photoErr } = await addChecklistPhoto(photoPayload);
+        if (photoErr) console.warn(photoErr.message);
 
-      const updatedPhotos = [...photosList, newPhotoObj];
+        const newPhotoObj: ChecklistPhoto = {
+          id: `exit-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          service_order_id: os.id,
+          tipo: 'saida',
+          categoria: 'saida',
+          url_foto: storageUrl || previewUrl,
+          observacao: 'Checklist de saída / entrega',
+          criado_em: new Date().toISOString(),
+        };
+
+        newItems.push(newPhotoObj);
+      }
+
+      const updatedPhotos = [...photosList, ...newItems];
       setPhotosList(updatedPhotos);
       onUpdate({ ...os, photos: updatedPhotos });
     } catch (err: any) {
@@ -295,6 +368,121 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
       if (exitPhotoInputRef.current) exitPhotoInputRef.current.value = '';
     }
   };
+
+  // Open Edit Modal for a specific photo
+  const handleOpenEditPhoto = (photo: ChecklistPhoto) => {
+    setSelectedPhotoForEdit(photo);
+    setEditPhotoTipo(photo.tipo === 'saida' || photo.categoria === 'saida' ? 'saida' : 'entrada');
+    setEditPhotoObs(photo.observacao || '');
+  };
+
+  // Save changes to photo (type, observation)
+  const handleSavePhotoChanges = async () => {
+    if (!selectedPhotoForEdit) return;
+    setSavingPhotoEdit(true);
+    setError(null);
+
+    try {
+      const updatedObj: ChecklistPhoto = {
+        ...selectedPhotoForEdit,
+        tipo: editPhotoTipo,
+        categoria: editPhotoTipo,
+        observacao: editPhotoObs.trim() || null,
+      };
+
+      // Only attempt remote update if id doesn't start with temporary mock prefix
+      if (!selectedPhotoForEdit.id.startsWith('entry-') && !selectedPhotoForEdit.id.startsWith('exit-') && !selectedPhotoForEdit.id.startsWith('temp-')) {
+        await updateChecklistPhoto(selectedPhotoForEdit.id, {
+          tipo: editPhotoTipo,
+          categoria: editPhotoTipo,
+          observacao: editPhotoObs.trim() || undefined,
+        });
+      }
+
+      const updatedList = photosList.map((p) =>
+        p.id === selectedPhotoForEdit.id ? updatedObj : p
+      );
+
+      setPhotosList(updatedList);
+      onUpdate({ ...os, photos: updatedList });
+      setSelectedPhotoForEdit(null);
+    } catch (err: any) {
+      setError('Erro ao salvar alterações da foto.');
+    } finally {
+      setSavingPhotoEdit(false);
+    }
+  };
+
+  // Replace photo file
+  const handleReplacePhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !selectedPhotoForEdit) return;
+
+    setSavingPhotoEdit(true);
+    setError(null);
+
+    try {
+      const file = e.target.files[0];
+      const previewUrl = await fileToDataUrl(file);
+      const storageUrl = await uploadChecklistPhoto(file, os.id, editPhotoTipo);
+      const finalUrl = storageUrl || previewUrl;
+
+      const updatedObj: ChecklistPhoto = {
+        ...selectedPhotoForEdit,
+        url_foto: finalUrl,
+        tipo: editPhotoTipo,
+        categoria: editPhotoTipo,
+        observacao: editPhotoObs.trim() || null,
+      };
+
+      if (!selectedPhotoForEdit.id.startsWith('entry-') && !selectedPhotoForEdit.id.startsWith('exit-') && !selectedPhotoForEdit.id.startsWith('temp-')) {
+        await updateChecklistPhoto(selectedPhotoForEdit.id, {
+          url_foto: finalUrl,
+          tipo: editPhotoTipo,
+          categoria: editPhotoTipo,
+          observacao: editPhotoObs.trim() || undefined,
+        });
+      }
+
+      const updatedList = photosList.map((p) =>
+        p.id === selectedPhotoForEdit.id ? updatedObj : p
+      );
+
+      setPhotosList(updatedList);
+      setSelectedPhotoForEdit(updatedObj);
+      onUpdate({ ...os, photos: updatedList });
+    } catch (err: any) {
+      setError('Erro ao substituir imagem da foto.');
+    } finally {
+      setSavingPhotoEdit(false);
+      if (replacePhotoInputRef.current) replacePhotoInputRef.current.value = '';
+    }
+  };
+
+  // Delete a single photo
+  const handleDeletePhoto = async (photoId: string) => {
+    setDeletingPhotoId(photoId);
+    setError(null);
+
+    try {
+      if (!photoId.startsWith('entry-') && !photoId.startsWith('exit-') && !photoId.startsWith('temp-')) {
+        const { error: delErr } = await deleteChecklistPhoto(photoId);
+        if (delErr) console.warn(delErr.message);
+      }
+
+      const updatedList = photosList.filter((p) => p.id !== photoId);
+      setPhotosList(updatedList);
+      onUpdate({ ...os, photos: updatedList });
+
+      if (selectedPhotoForEdit?.id === photoId) {
+        setSelectedPhotoForEdit(null);
+      }
+    } catch (err: any) {
+      setError('Erro ao excluir foto.');
+    } finally {
+      setDeletingPhotoId(null);
+    }
+  };
+
 
   // WhatsApp quick trigger with complete OS & checklist
   const handleWhatsApp = () => {
@@ -644,16 +832,40 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
 
           {/* Checklist Fotos (Entrada & Saída) */}
           <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-[#0B1B4A] flex items-center gap-1.5">
                 <Camera className="w-3.5 h-3.5 text-[#0B1B4A]" />
-                Fotos do Aparelho (Checklist)
+                <span>Fotos do Aparelho ({photosList.length})</span>
               </span>
-              <div>
+
+              {/* Action Buttons: + Entrada & + Saída */}
+              <div className="flex items-center gap-1.5">
+                {/* Input + Button for Entry Photo */}
                 <input
                   type="file"
                   accept="image/*"
                   capture="environment"
+                  multiple
+                  ref={entryPhotoInputRef}
+                  onChange={handleAddEntryPhoto}
+                  className="hidden"
+                  id="modal-entry-photo-input"
+                />
+                <label
+                  htmlFor="modal-entry-photo-input"
+                  className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0B1B4A] font-bold text-xs border border-slate-200 flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all"
+                  title="Adicionar foto do aparelho na entrada"
+                >
+                  <Camera className="w-3.5 h-3.5 text-[#0B1B4A]" />
+                  <span>+ Foto de Entrada</span>
+                </label>
+
+                {/* Input + Button for Exit Photo */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
                   ref={exitPhotoInputRef}
                   onChange={handleAddExitPhoto}
                   className="hidden"
@@ -661,50 +873,149 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                 />
                 <label
                   htmlFor="modal-exit-photo-input"
-                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0B1B4A] font-bold text-xs border border-slate-200 flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 font-bold text-xs border border-emerald-200 flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all"
+                  title="Adicionar foto do aparelho na saída / concluído"
                 >
-                  <Camera className="w-3.5 h-3.5" />
+                  <Camera className="w-3.5 h-3.5 text-emerald-600" />
                   <span>+ Foto de Saída</span>
                 </label>
               </div>
             </div>
 
-            {uploadingExitPhoto && (
-              <div className="flex items-center gap-2 text-xs text-[#0B1B4A] font-semibold animate-pulse">
-                <span className="inline-block w-3.5 h-3.5 border-2 border-[#0B1B4A]/30 border-t-[#0B1B4A] rounded-full animate-spin" />
-                <span>Enviando imagem...</span>
+            {/* Uploading indicator */}
+            {(uploadingEntryPhoto || uploadingExitPhoto) && (
+              <div className="flex items-center gap-2 text-xs text-[#0B1B4A] font-semibold bg-white p-2.5 rounded-xl border border-slate-200 animate-pulse">
+                <span className="inline-block w-4 h-4 border-2 border-[#0B1B4A]/30 border-t-[#0B1B4A] rounded-full animate-spin" />
+                <span>
+                  {uploadingEntryPhoto ? 'Enviando foto de entrada...' : 'Enviando foto de saída...'}
+                </span>
+              </div>
+            )}
+
+            {/* Filter Tabs if multiple photos exist */}
+            {photosList.length > 0 && (
+              <div className="flex items-center gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setPhotoFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    photoFilter === 'all'
+                      ? 'bg-[#0B1B4A] text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  Todas ({photosList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPhotoFilter('entrada')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    photoFilter === 'entrada'
+                      ? 'bg-[#0B1B4A] text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  Entrada ({photosList.filter((p) => p.tipo !== 'saida' && p.categoria !== 'saida').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPhotoFilter('saida')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    photoFilter === 'saida'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  Saída ({photosList.filter((p) => p.tipo === 'saida' || p.categoria === 'saida').length})
+                </button>
               </div>
             )}
 
             {/* Photos Grid */}
             {photosList.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-2">
-                Nenhuma foto registrada para este aparelho.
-              </p>
+              <div className="text-center py-5 px-3 bg-white rounded-xl border border-dashed border-slate-200">
+                <Camera className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                <p className="text-xs text-slate-500 font-medium">
+                  Nenhuma foto registrada para este aparelho ainda.
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Use os botões acima para anexar fotos de Entrada ou Saída.
+                </p>
+              </div>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
-                {photosList.map((p, idx) => {
-                  const isSaida = p.tipo === 'saida' || p.categoria === 'saida';
-                  return (
-                    <div
-                      key={p.id || idx}
-                      className="relative group rounded-xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-sm"
-                    >
-                      <img
-                        src={p.url_foto}
-                        alt={isSaida ? 'saída' : 'entrada'}
-                        className="w-full h-full object-cover"
-                      />
-                      <span
-                        className={`absolute bottom-1 left-1 text-white text-[8px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                          isSaida ? 'bg-emerald-600' : 'bg-black/80'
-                        }`}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 pt-1">
+                {photosList
+                  .filter((p) => {
+                    if (photoFilter === 'entrada') return p.tipo !== 'saida' && p.categoria !== 'saida';
+                    if (photoFilter === 'saida') return p.tipo === 'saida' || p.categoria === 'saida';
+                    return true;
+                  })
+                  .map((p, idx) => {
+                    const isSaida = p.tipo === 'saida' || p.categoria === 'saida';
+                    const isDeletingThis = deletingPhotoId === p.id;
+
+                    return (
+                      <div
+                        key={p.id || idx}
+                        className="group relative rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
                       >
-                        {isSaida ? '(saída)' : '(entrada)'}
-                      </span>
-                    </div>
-                  );
-                })}
+                        {/* Clickable Image to view/edit */}
+                        <div
+                          onClick={() => handleOpenEditPhoto(p)}
+                          className="w-full h-full cursor-pointer overflow-hidden relative"
+                        >
+                          <img
+                            src={p.url_foto}
+                            alt={isSaida ? 'Foto de saída' : 'Foto de entrada'}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+
+                          {/* Hover Overlay with Eye / Edit */}
+                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                            <span className="p-1.5 rounded-lg bg-white/90 text-slate-800 text-[10px] font-bold flex items-center gap-1 shadow">
+                              <Pencil className="w-3 h-3 text-[#0B1B4A]" />
+                              <span>Editar</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Top Right Quick Delete Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePhoto(p.id);
+                          }}
+                          disabled={isDeletingThis}
+                          className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/60 hover:bg-rose-600 text-white transition-colors shadow"
+                          title="Excluir foto"
+                        >
+                          {isDeletingThis ? (
+                            <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                          ) : (
+                            <Trash2 className="w-3 h-3" />
+                          )}
+                        </button>
+
+                        {/* Bottom Label Badge */}
+                        <div className="absolute bottom-1.5 left-1.5 right-1.5 pointer-events-none flex items-center justify-between gap-1">
+                          <span
+                            className={`text-white text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider shadow ${
+                              isSaida ? 'bg-emerald-600' : 'bg-[#0B1B4A]'
+                            }`}
+                          >
+                            {isSaida ? 'Saída' : 'Entrada'}
+                          </span>
+
+                          {p.observacao && (
+                            <span className="text-white text-[8px] bg-black/70 px-1.5 py-0.5 rounded truncate max-w-[80px]">
+                              {p.observacao}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -731,6 +1042,162 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL EXCLUSIVO DE VISUALIZAÇÃO E EDIÇÃO DA FOTO                          */}
+      {/* ========================================================================= */}
+      {selectedPhotoForEdit && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-[#0B1B4A] px-5 py-3.5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-bold text-sm sm:text-base">Editar Foto do Aparelho</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoForEdit(null)}
+                className="p-1 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
+              {/* Photo High-Res Preview */}
+              <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 aspect-video flex items-center justify-center shadow-inner">
+                <img
+                  src={selectedPhotoForEdit.url_foto}
+                  alt="Foto detalhada"
+                  className="w-full h-full object-contain"
+                />
+
+                <span
+                  className={`absolute top-2.5 left-2.5 text-white text-[10px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider shadow ${
+                    editPhotoTipo === 'saida' ? 'bg-emerald-600' : 'bg-[#0B1B4A]'
+                  }`}
+                >
+                  {editPhotoTipo === 'saida' ? 'Foto de Saída / Concluído' : 'Foto de Entrada'}
+                </span>
+              </div>
+
+              {/* Change/Replace Photo Image */}
+              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="text-xs text-slate-700 font-medium">Trocar arquivo desta imagem:</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  ref={replacePhotoInputRef}
+                  onChange={handleReplacePhotoFile}
+                  className="hidden"
+                  id="replace-photo-modal-input"
+                />
+                <label
+                  htmlFor="replace-photo-modal-input"
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0B1B4A] font-bold text-xs border border-slate-200 cursor-pointer shadow-sm active:scale-95 transition-all flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Escolher Outra Foto</span>
+                </label>
+              </div>
+
+              {/* Photo Type Toggle (Entrada vs Saída) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5 tracking-wider">
+                  Tipo da Foto
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditPhotoTipo('entrada')}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 ${
+                      editPhotoTipo === 'entrada'
+                        ? 'bg-[#0B1B4A] text-white border-[#0B1B4A] shadow'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>📥 Foto de Entrada</span>
+                    {editPhotoTipo === 'entrada' && <Check className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditPhotoTipo('saida')}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 ${
+                      editPhotoTipo === 'saida'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>📤 Foto de Saída</span>
+                    {editPhotoTipo === 'saida' && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Observation / Note Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5 tracking-wider">
+                  Observação / Legenda
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Tela com trincado superior, tampa riscada, aparelho com película..."
+                  value={editPhotoObs}
+                  onChange={(e) => setEditPhotoObs(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-xs bg-white text-slate-800"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => handleDeletePhoto(selectedPhotoForEdit.id)}
+                disabled={savingPhotoEdit}
+                className="px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Excluir Foto</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhotoForEdit(null)}
+                  className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs border border-slate-200 transition-all active:scale-95"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSavePhotoChanges}
+                  disabled={savingPhotoEdit}
+                  className="px-4 py-2.5 rounded-xl bg-[#0B1B4A] hover:bg-[#142866] text-white font-bold text-xs flex items-center gap-1.5 shadow transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {savingPhotoEdit ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Salvar Foto</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
