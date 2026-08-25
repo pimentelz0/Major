@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Printer, MessageCircle, ShieldCheck, Phone } from 'lucide-react';
 import type { OSWithDetails, ChecklistItemState } from '../types';
+import { sendWhatsAppOS } from '../utils/whatsapp';
 
 interface ReceiptModalProps {
   os: OSWithDetails | null;
@@ -36,42 +37,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
   };
 
   const handleSendWhatsApp = () => {
-    if (!os.client?.telefone) return;
-    const cleanPhone = os.client.telefone.replace(/\D/g, '');
-    const phoneWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-
-    // Build checklist summary if present
-    let checklistText = '';
-    if (os.checklist && Object.keys(os.checklist).length > 0) {
-      const entries = Object.entries(os.checklist as Record<string, ChecklistItemState>).filter(
-        ([_, v]) => v?.status || (v?.obs && v.obs.trim())
-      );
-      if (entries.length > 0) {
-        checklistText = '\n\n📝 *Checklist de Entrada:*';
-        entries.forEach(([key, val]) => {
-          const icon = val?.status === 'ok' ? '✅' : val?.status === 'nok' ? '❌' : '⚪';
-          const obsSuffix = val?.obs && val.obs.trim() ? ` _(Obs: ${val.obs.trim()})_` : '';
-          checklistText += `\n• ${key}: ${icon}${obsSuffix}`;
-        });
-      }
-    }
-
-    const text = `*MAJOR ASSISTÊNCIA TÉCNICA* 📱
-Olá *${os.client.nome}*, segue o comprovante da sua Ordem de Serviço:
-
-📋 *OS Nº:* #${shortId}
-📱 *Aparelho:* ${os.device?.marca} ${os.device?.modelo} ${os.device?.imei ? `(IMEI: ${os.device.imei})` : ''}
-⚡ *Status:* ${os.status.toUpperCase()}
-🔧 *Serviço:* ${os.descricao_servico || 'Manutenção e reparo especializado'}
-💰 *Valor:* R$ ${os.valor.toFixed(2)}
-📅 *Entrada:* ${entryDate}
-🛡️ *Garantia até:* ${warrantyDate} ${os.garantia_cobertura ? `(${os.garantia_cobertura})` : ''}${checklistText}
-
-Agradecemos a preferência!
-*MAJOR - Assistência Técnica para Smartphones*`;
-
-    const encoded = encodeURIComponent(text);
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encoded}`, '_blank');
+    sendWhatsAppOS(os);
   };
 
   return (

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { OSWithDetails, OSStatus, DeviceChecklist } from '../types';
 import { ChecklistEditor } from './ChecklistEditor';
+import { sendWhatsAppOS } from '../utils/whatsapp';
 import {
   updateServiceOrderStatus,
   updateFullServiceOrder,
@@ -295,29 +296,35 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
     }
   };
 
-  // WhatsApp quick trigger
+  // WhatsApp quick trigger with complete OS & checklist
   const handleWhatsApp = () => {
-    const targetPhone = isEditingFull ? editClientPhone : os.client?.telefone;
-    const targetClient = isEditingFull ? editClientName : os.client?.nome;
-    const targetDevice = isEditingFull ? `${editDeviceBrand} ${editDeviceModel}` : `${os.device?.marca} ${os.device?.modelo}`;
+    const numVal = parseFloat(valor.replace(',', '.')) || 0;
+    const currentOSPayload: OSWithDetails = {
+      ...os,
+      status: currentStatus,
+      descricao_servico: descricaoServico.trim(),
+      valor: numVal,
+      garantia_fim: garantiaFim || null,
+      garantia_cobertura: garantiaCobertura.trim() || null,
+      checklist: checklistState,
+      client: {
+        id: os.client?.id || '',
+        nome: isEditingFull ? editClientName.trim() : os.client?.nome || '',
+        telefone: isEditingFull ? editClientPhone.replace(/\D/g, '') : os.client?.telefone || '',
+        criado_em: os.client?.criado_em || new Date().toISOString(),
+      },
+      device: {
+        id: os.device?.id || '',
+        client_id: os.device?.client_id || '',
+        marca: isEditingFull ? editDeviceBrand.trim() : os.device?.marca || '',
+        modelo: isEditingFull ? editDeviceModel.trim() : os.device?.modelo || '',
+        imei: isEditingFull ? editDeviceImei.trim() : os.device?.imei || null,
+        criado_em: os.device?.criado_em || new Date().toISOString(),
+      },
+      photos: photosList,
+    };
 
-    if (!targetPhone) return;
-    const cleanPhone = targetPhone.replace(/\D/g, '');
-    const phoneWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-
-    const text = `*MAJOR ASSISTÊNCIA TÉCNICA* 📱
-Olá *${targetClient}*, atualização da sua Ordem de Serviço *#${shortId}*:
-
-📱 *Aparelho:* ${targetDevice}
-⚡ *Status atual:* ${currentStatus.toUpperCase()}
-🔧 *Serviço:* ${descricaoServico || 'Em manutenção'}
-💰 *Valor:* R$ ${parseFloat(valor || '0').toFixed(2)}
-🛡️ *Garantia:* ${garantiaFim ? `Válida até ${new Date(garantiaFim + 'T00:00:00').toLocaleDateString('pt-BR')}` : '90 dias após entrega'}
-
-Qualquer dúvida estamos à disposição!
-*MAJOR Assistência Técnica*`;
-
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(text)}`, '_blank');
+    sendWhatsAppOS(currentOSPayload);
   };
 
   return (

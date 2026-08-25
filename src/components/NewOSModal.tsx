@@ -12,11 +12,13 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { createServiceOrder, uploadChecklistPhoto, fileToDataUrl } from '../lib/supabase';
 import type { OSWithDetails, DeviceChecklist } from '../types';
 import { ChecklistEditor } from './ChecklistEditor';
+import { sendWhatsAppOS } from '../utils/whatsapp';
 
 interface NewOSModalProps {
   isOpen: boolean;
@@ -100,8 +102,8 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
     setPhotos((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent, sendWhatsApp: boolean = false) => {
+    if (e) e.preventDefault();
     setError(null);
 
     if (!clienteNome.trim()) {
@@ -155,6 +157,11 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
 
       if (createError || !createdOS) {
         throw new Error(createError?.message || 'Falha ao gravar Ordem de Serviço no Supabase');
+      }
+
+      // 3. Send full OS message with checklist via WhatsApp if requested
+      if (sendWhatsApp) {
+        sendWhatsAppOS(createdOS);
       }
 
       onSuccess(createdOS);
@@ -429,24 +436,35 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
             )}
           </div>
 
-          {/* Submit Button */}
-          <div className="pt-2">
+          {/* Submit Actions */}
+          <div className="pt-3 space-y-2">
             <button
-              type="submit"
+              type="button"
+              onClick={() => handleSubmit(undefined, true)}
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 active:scale-[0.99]"
+              className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 active:scale-[0.99]"
             >
               {loading ? (
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Enviando imagem...</span>
+                  <span>Processando e enviando...</span>
                 </div>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4 text-white" />
-                  <span>Registrar Ordem de Serviço</span>
+                  <MessageCircle className="w-5 h-5 text-white" />
+                  <span>Registrar e Enviar pro Cliente (OS + Checklist)</span>
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSubmit(undefined, false)}
+              disabled={loading}
+              className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50"
+            >
+              <CheckCircle2 className="w-4 h-4 text-slate-500" />
+              <span>Apenas Registrar OS (Sem enviar WhatsApp)</span>
             </button>
           </div>
         </form>

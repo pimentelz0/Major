@@ -21,6 +21,7 @@ import {
 import type { OSWithDetails, OSStatus } from '../types';
 import { fetchServiceOrders, deleteServiceOrder } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { sendWhatsAppOS } from '../utils/whatsapp';
 
 interface DashboardProps {
   onOpenNewOS: () => void;
@@ -144,13 +145,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const handleDirectWhatsApp = (e: React.MouseEvent, os: OSWithDetails) => {
     e.stopPropagation();
-    if (!os.client?.telefone) return;
-    const cleanPhone = os.client.telefone.replace(/\D/g, '');
-    const phoneWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-    const shortId = os.id.substring(0, 8).toUpperCase();
-
-    const text = `Olá *${os.client.nome}*, aqui é da *MAJOR Assistência Técnica* referente ao seu *${os.device?.marca} ${os.device?.modelo}* (OS #${shortId}).`;
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(text)}`, '_blank');
+    sendWhatsAppOS(os);
   };
 
   return (
