@@ -19,7 +19,8 @@ import {
   Pencil,
   RotateCcw,
 } from 'lucide-react';
-import type { OSWithDetails, OSStatus } from '../types';
+import type { OSWithDetails, OSStatus, DeviceChecklist } from '../types';
+import { ChecklistEditor } from './ChecklistEditor';
 import {
   updateServiceOrderStatus,
   updateFullServiceOrder,
@@ -75,6 +76,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   const [garantiaCobertura, setGarantiaCobertura] = useState(
     os.garantia_cobertura || 'Peça trocada e mão de obra'
   );
+  const [checklistState, setChecklistState] = useState<DeviceChecklist>(os.checklist || {});
 
   // Photos state (local + remote)
   const [photosList, setPhotosList] = useState(os.photos || []);
@@ -95,6 +97,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
       setValor(os.valor?.toString() || '0');
       setGarantiaFim(os.garantia_fim || '');
       setGarantiaCobertura(os.garantia_cobertura || 'Peça trocada e mão de obra');
+      setChecklistState(os.checklist || {});
       setPhotosList(os.photos || []);
       setEditClientName(os.client?.nome || '');
       setEditClientPhone(os.client?.telefone || '');
@@ -166,6 +169,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
           valor: numVal,
           garantiaFim: garantiaFim || null,
           garantiaCobertura: garantiaCobertura.trim() || null,
+          checklist: checklistState,
           clientId: os.client?.id,
           deviceId: os.device?.id,
         });
@@ -178,6 +182,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
           valor: numVal,
           garantia_fim: garantiaFim || null,
           garantia_cobertura: garantiaCobertura.trim() || null,
+          checklist: checklistState,
           client: {
             ...os.client,
             id: os.client?.id || '',
@@ -203,6 +208,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
           valor: numVal,
           garantia_fim: garantiaFim || null,
           garantia_cobertura: garantiaCobertura.trim() || null,
+          checklist: checklistState,
         };
 
         const { error: err } = await updateServiceOrderStatus(os.id, updates);
@@ -214,6 +220,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
           valor: numVal,
           garantia_fim: garantiaFim || null,
           garantia_cobertura: garantiaCobertura.trim() || null,
+          checklist: checklistState,
           photos: photosList,
         };
 
@@ -607,7 +614,9 @@ Qualquer dúvida estamos à disposição!
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Salvo com sucesso!
                 </span>
-              ) : <div />}
+              ) : (
+                <span />
+              )}
               <button
                 type="button"
                 onClick={handleSaveDetails}
@@ -619,6 +628,12 @@ Qualquer dúvida estamos à disposição!
               </button>
             </div>
           </div>
+
+          {/* Checklist de Testes do Aparelho */}
+          <ChecklistEditor
+            checklist={checklistState}
+            onChange={setChecklistState}
+          />
 
           {/* Checklist Fotos (Entrada & Saída) */}
           <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-3">

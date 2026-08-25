@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nome TEXT NOT NULL,
     telefone TEXT NOT NULL,
+    criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.devices (
     marca TEXT NOT NULL,
     modelo TEXT NOT NULL,
     imei TEXT,
+    criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -36,9 +38,16 @@ CREATE TABLE IF NOT EXISTS public.service_orders (
     descricao_servico TEXT,
     garantia_fim DATE,
     garantia_cobertura TEXT,
-    criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    checklist JSONB,
+    criado_por UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Garantir colunas essenciais caso as tabelas já existam:
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.service_orders ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.service_orders ADD COLUMN IF NOT EXISTS checklist JSONB;
 
 -- 5. Tabela de FOTOS DO CHECKLIST (ENTRADA / SAÍDA)
 CREATE TABLE IF NOT EXISTS public.checklist_photos (
@@ -59,40 +68,61 @@ CREATE INDEX IF NOT EXISTS idx_service_orders_device_id ON public.service_orders
 CREATE INDEX IF NOT EXISTS idx_service_orders_status ON public.service_orders(status);
 CREATE INDEX IF NOT EXISTS idx_checklist_photos_so_id ON public.checklist_photos(service_order_id);
 
--- 7. Configuração de RLS (Row Level Security)
+-- 7. Configuração de RLS (Row Level Security) com isolamento total por usuário
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.checklist_photos ENABLE ROW LEVEL SECURITY;
 
--- Políticas de acesso para usuários autenticados (técnicos/atendentes da loja Major)
+-- Limpeza de políticas antigas
 DROP POLICY IF EXISTS "Permitir acesso completo aos clientes para autenticados" ON public.clients;
-CREATE POLICY "Permitir acesso completo aos clientes para autenticados"
+DROP POLICY IF EXISTS "Permitir acesso completo aos aparelhos para autenticados" ON public.devices;
+DROP POLICY IF EXISTS "Permitir acesso completo às OS para autenticados" ON public.service_orders;
+DROP POLICY IF EXISTS "Permitir acesso completo às fotos para autenticados" ON public.checklist_photos;
+DROP POLICY IF EXISTS "Acesso individual aos clientes" ON public.clients;
+DROP POLICY IF EXISTS "Acesso individual aos aparelhos" ON public.devices;
+DROP POLICY IF EXISTS "Acesso individual às OS" ON public.service_orders;
+DROP POLICY IF EXISTS "Acesso individual às fotos" ON public.checklist_photos;
+
+-- 1. Políticas isoladas para CLIENTES (cada usuário acessa apenas seus próprios clientes cadastrados)
+CREATE POLICY "Acesso individual aos clientes"
     ON public.clients FOR ALL
     TO authenticated
-    USING (true)
-    WITH CHECK (true);
+    USING (criado_por = auth.uid() OR criado_por IS NULL)
+    WITH CHECK (criado_por = auth.uid());
 
-DROP POLICY IF EXISTS "Permitir acesso completo aos aparelhos para autenticados" ON public.devices;
-CREATE POLICY "Permitir acesso completo aos aparelhos para autenticados"
+-- 2. Políticas isoladas para APARELHOS (cada usuário acessa apenas seus aparelhos cadastrados)
+CREATE POLICY "Acesso individual aos aparelhos"
     ON public.devices FOR ALL
     TO authenticated
-    USING (true)
-    WITH CHECK (true);
+    USING (criado_por = auth.uid() OR criado_por IS NULL)
+    WITH CHECK (criado_por = auth.uid());
 
-DROP POLICY IF EXISTS "Permitir acesso completo às OS para autenticados" ON public.service_orders;
-CREATE POLICY "Permitir acesso completo às OS para autenticados"
+-- 3. Políticas isoladas para ORDENS DE SERVIÇO (cada usuário só vê e gerencia suas próprias OS)
+CREATE POLICY "Acesso individual às OS"
     ON public.service_orders FOR ALL
     TO authenticated
-    USING (true)
-    WITH CHECK (true);
+    USING (criado_por = auth.uid())
+    WITH CHECK (criado_por = auth.uid());
 
-DROP POLICY IF EXISTS "Permitir acesso completo às fotos para autenticados" ON public.checklist_photos;
-CREATE POLICY "Permitir acesso completo às fotos para autenticados"
+-- 4. Políticas isoladas para FOTOS DE CHECKLIST (apenas fotos pertencentes às OS do usuário)
+CREATE POLICY "Acesso individual às fotos"
     ON public.checklist_photos FOR ALL
     TO authenticated
-    USING (true)
-    WITH CHECK (true);
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.service_orders so
+            WHERE so.id = checklist_photos.service_order_id
+            AND so.criado_por = auth.uid()
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.service_orders so
+            WHERE so.id = checklist_photos.service_order_id
+            AND so.criado_por = auth.uid()
+        )
+    );
 
 -- 8. Storage Bucket para fotos do checklist (major-photos)
 INSERT INTO storage.buckets (id, name, public)

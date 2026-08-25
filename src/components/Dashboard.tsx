@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { OSWithDetails, OSStatus } from '../types';
 import { fetchServiceOrders, deleteServiceOrder } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 interface DashboardProps {
   onOpenNewOS: () => void;
@@ -64,6 +65,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenSqlModal,
   lastUpdated,
 }) => {
+  const { user } = useAuth();
   const [orders, setOrders] = useState<OSWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,9 +75,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadOrders = async () => {
+    if (!user) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setDbError(null);
-    const { data, error } = await fetchServiceOrders();
+    const { data, error } = await fetchServiceOrders(user.id);
     if (error) {
       console.error('Error loading OS list:', error);
       if (error.message.includes('relation') || error.message.includes('does not exist')) {
@@ -111,7 +118,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   useEffect(() => {
     loadOrders();
-  }, [lastUpdated]);
+  }, [lastUpdated, user?.id]);
 
   // Filtered list
   const filteredOrders = orders.filter((os) => {
@@ -350,13 +357,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           {formattedDate}
                         </span>
                         {os.photos && os.photos.length > 0 && (
-                          <>
+                          <span className="flex items-center gap-3">
                             <span className="text-slate-300">•</span>
                             <span className="text-slate-500 flex items-center gap-1">
                               <Camera className="w-3 h-3 text-slate-400" />
                               {os.photos.length} foto(s)
                             </span>
-                          </>
+                          </span>
                         )}
                       </div>
                     </div>
@@ -460,10 +467,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow transition-colors flex items-center justify-center gap-1.5"
                 >
                   {deletingId ? (
-                    <>
+                    <span className="flex items-center gap-1.5">
                       <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                       <span>Excluindo...</span>
-                    </>
+                    </span>
                   ) : (
                     <span>Excluir</span>
                   )}

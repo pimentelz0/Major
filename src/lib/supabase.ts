@@ -67,13 +67,24 @@ export function fileToDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Fetch all Service Orders with their associated Client, Device, and Photos directly from Supabase
+ * Fetch all Service Orders for the current authenticated user with their associated Client, Device, and Photos
  */
-export async function fetchServiceOrders(): Promise<{
+export async function fetchServiceOrders(userId?: string): Promise<{
   data: OSWithDetails[];
   error: Error | null;
 }> {
   try {
+    let currentUserId = userId;
+    if (!currentUserId) {
+      const { data: authData } = await supabase.auth.getUser();
+      currentUserId = authData?.user?.id;
+    }
+
+    // If there is no authenticated user, return empty list to protect data privacy
+    if (!currentUserId) {
+      return { data: [], error: null };
+    }
+
     const { data: orders, error: ordersError } = await supabase
       .from('service_orders')
       .select(
@@ -86,6 +97,7 @@ export async function fetchServiceOrders(): Promise<{
         photos:checklist_photos (*)
       `
       )
+      .eq('criado_por', currentUserId)
       .order('criado_em', { ascending: false });
 
     if (ordersError) {
@@ -104,6 +116,7 @@ export async function fetchServiceOrders(): Promise<{
         descricao_servico: so.descricao_servico,
         garantia_fim: so.garantia_fim,
         garantia_cobertura: so.garantia_cobertura,
+        checklist: so.checklist || null,
         criado_por: so.criado_por,
         criado_em: so.criado_em,
         device: so.device,
@@ -127,54 +140,121 @@ export async function createServiceOrder(
   userId?: string
 ): Promise<{ data: OSWithDetails | null; error: Error | null }> {
   try {
-    // 1. Insert Client
-    const { data: clientData, error: clientError } = await supabase
+    let currentUserId = userId;
+    if (!currentUserId) {
+      const { data: authData } = await supabase.auth.getUser();
+      currentUserId = authData?.user?.id;
+    }
+
+    // 1. Insert Client (scoped to user)
+    const clientPayload: any = {
+      nome: payload.clienteNome.trim(),
+      telefone: payload.clienteTelefone.replace(/\D/g, ''),
+    };
+    if (currentUserId) {
+      clientPayload.criado_por = currentUserId;
+    }
+
+    let clientData: any = null;
+    let clientError: any = null;
+
+    const clientRes = await supabase
       .from('clients')
-      .insert([
-        {
-          nome: payload.clienteNome.trim(),
-          telefone: payload.clienteTelefone.replace(/\D/g, ''),
-        },
-      ])
+      .insert([clientPayload])
       .select()
       .single();
+
+    if (clientRes.error && clientPayload.criado_por && clientRes.error.message.includes('criado_por')) {
+      delete clientPayload.criado_por;
+      const retryClientRes = await supabase
+        .from('clients')
+        .insert([clientPayload])
+        .select()
+        .single();
+      clientData = retryClientRes.data;
+      clientError = retryClientRes.error;
+    } else {
+      clientData = clientRes.data;
+      clientError = clientRes.error;
+    }
 
     if (clientError || !clientData) {
       throw new Error(`Erro ao salvar cliente: ${clientError?.message}`);
     }
 
-    // 2. Insert Device
-    const { data: deviceData, error: deviceError } = await supabase
+    // 2. Insert Device (scoped to user)
+    const devicePayload: any = {
+      client_id: clientData.id,
+      marca: payload.aparelhoMarca.trim(),
+      modelo: payload.aparelhoModelo.trim(),
+      imei: payload.aparelhoImei?.trim() || null,
+    };
+    if (currentUserId) {
+      devicePayload.criado_por = currentUserId;
+    }
+
+    let deviceData: any = null;
+    let deviceError: any = null;
+
+    const deviceRes = await supabase
       .from('devices')
-      .insert([
-        {
-          client_id: clientData.id,
-          marca: payload.aparelhoMarca.trim(),
-          modelo: payload.aparelhoModelo.trim(),
-          imei: payload.aparelhoImei?.trim() || null,
-        },
-      ])
+      .insert([devicePayload])
       .select()
       .single();
+
+    if (deviceRes.error && devicePayload.criado_por && deviceRes.error.message.includes('criado_por')) {
+      delete devicePayload.criado_por;
+      const retryDeviceRes = await supabase
+        .from('devices')
+        .insert([devicePayload])
+        .select()
+        .single();
+      deviceData = retryDeviceRes.data;
+      deviceError = retryDeviceRes.error;
+    } else {
+      deviceData = deviceRes.data;
+      deviceError = deviceRes.error;
+    }
 
     if (deviceError || !deviceData) {
       throw new Error(`Erro ao salvar aparelho: ${deviceError?.message}`);
     }
 
-    // 3. Insert Service Order
-    const { data: orderData, error: orderError } = await supabase
+    // 3. Insert Service Order (strictly assigned to current authenticated user)
+    const orderPayload: any = {
+      device_id: deviceData.id,
+      status: 'recebido',
+      valor: payload.valor || 0,
+      descricao_servico: payload.descricaoServico?.trim() || null,
+      criado_por: currentUserId || null,
+    };
+    if (payload.checklist) {
+      orderPayload.checklist = payload.checklist;
+    }
+
+    let orderData: any = null;
+    let orderError: any = null;
+
+    const res = await supabase
       .from('service_orders')
-      .insert([
-        {
-          device_id: deviceData.id,
-          status: 'recebido',
-          valor: payload.valor || 0,
-          descricao_servico: payload.descricaoServico?.trim() || null,
-          criado_por: userId || null,
-        },
-      ])
+      .insert([orderPayload])
       .select()
       .single();
+
+    if (res.error && payload.checklist && res.error.message.includes('checklist')) {
+      // Fallback in case table doesn't have checklist column yet
+      delete orderPayload.checklist;
+      const retryRes = await supabase
+        .from('service_orders')
+        .insert([orderPayload])
+        .select()
+        .single();
+      orderData = retryRes.data;
+      orderError = retryRes.error;
+    } else {
+      orderData = res.data;
+      orderError = res.error;
+    }
 
     if (orderError || !orderData) {
       throw new Error(`Erro ao criar OS: ${orderError?.message}`);
@@ -233,6 +313,7 @@ export async function updateServiceOrderStatus(
     data_saida?: string | null;
     garantia_fim?: string | null;
     garantia_cobertura?: string | null;
+    checklist?: any;
   }
 ): Promise<{ error: Error | null }> {
   try {
@@ -286,6 +367,7 @@ export async function updateFullServiceOrder(
     valor?: number;
     garantiaFim?: string | null;
     garantiaCobertura?: string | null;
+    checklist?: any;
     clientId?: string;
     deviceId?: string;
   }
@@ -315,6 +397,7 @@ export async function updateFullServiceOrder(
     if (payload.valor !== undefined) osUpdates.valor = payload.valor;
     if (payload.garantiaFim !== undefined) osUpdates.garantia_fim = payload.garantiaFim;
     if (payload.garantiaCobertura !== undefined) osUpdates.garantia_cobertura = payload.garantiaCobertura;
+    if (payload.checklist !== undefined) osUpdates.checklist = payload.checklist;
 
     if (Object.keys(osUpdates).length > 0) {
       const { error } = await supabase.from('service_orders').update(osUpdates).eq('id', orderId);

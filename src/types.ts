@@ -1,5 +1,32 @@
 export type OSStatus = 'recebido' | 'em_reparo' | 'pronto' | 'entregue';
 
+export interface ChecklistItemState {
+  status?: 'ok' | 'nok' | null;
+  obs?: string;
+}
+
+export type DeviceChecklist = Record<string, ChecklistItemState>;
+
+export const DEFAULT_CHECKLIST_ITEMS = [
+  'Tela',
+  'Botões',
+  'Carga',
+  'Bateria',
+  'Tampa traseira',
+  'Câmera frontal',
+  'Câmera traseira',
+  'Flash',
+  'Faceid/biometria',
+  'Auricular',
+  'Alto-falante',
+  'Vibracall',
+  'Área',
+  'Wi-Fi',
+  'Bluetooth',
+  'NFC',
+  'AirDrop',
+] as const;
+
 export interface Client {
   id: string;
   nome: string;
@@ -26,6 +53,7 @@ export interface ServiceOrder {
   descricao_servico?: string | null;
   garantia_fim?: string | null;
   garantia_cobertura?: string | null;
+  checklist?: DeviceChecklist | null;
   criado_por?: string | null;
   criado_em: string;
 }
@@ -54,9 +82,11 @@ export interface CreateOSPayload {
   aparelhoImei?: string;
   valor: number;
   descricaoServico?: string;
+  checklist?: DeviceChecklist;
   fotosEntrada: Array<{
     url: string;
     categoria: string;
     observacao?: string;
   }>;
 }
+

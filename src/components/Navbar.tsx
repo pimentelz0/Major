@@ -3,7 +3,6 @@ import { LogOut, Database } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
-  onOpenNewOS: () => void;
   onOpenSqlModal: () => void;
 }
 

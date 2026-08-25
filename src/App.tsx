@@ -51,7 +51,6 @@ function MainApp() {
     <div className="min-h-screen bg-[#F4F7FE] flex flex-col text-slate-800 font-sans selection:bg-[#0B1B4A] selection:text-white">
       {/* Header Bar */}
       <Navbar
-        onOpenNewOS={() => setIsNewOSOpen(true)}
         onOpenSqlModal={() => setIsSqlModalOpen(true)}
       />
 

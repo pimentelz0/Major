@@ -1,6 +1,6 @@
 import React from 'react';
-import { X, Printer, MessageCircle, Smartphone, ShieldCheck, CheckCircle, Calendar, User, Phone } from 'lucide-react';
-import type { OSWithDetails } from '../types';
+import { X, Printer, MessageCircle, ShieldCheck, Phone } from 'lucide-react';
+import type { OSWithDetails, ChecklistItemState } from '../types';
 
 interface ReceiptModalProps {
   os: OSWithDetails | null;
@@ -40,6 +40,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
     const cleanPhone = os.client.telefone.replace(/\D/g, '');
     const phoneWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
+    // Build checklist summary if present
+    let checklistText = '';
+    if (os.checklist && Object.keys(os.checklist).length > 0) {
+      const entries = Object.entries(os.checklist as Record<string, ChecklistItemState>).filter(
+        ([_, v]) => v?.status || (v?.obs && v.obs.trim())
+      );
+      if (entries.length > 0) {
+        checklistText = '\n\n📝 *Checklist de Entrada:*';
+        entries.forEach(([key, val]) => {
+          const icon = val?.status === 'ok' ? '✅' : val?.status === 'nok' ? '❌' : '⚪';
+          const obsSuffix = val?.obs && val.obs.trim() ? ` _(Obs: ${val.obs.trim()})_` : '';
+          checklistText += `\n• ${key}: ${icon}${obsSuffix}`;
+        });
+      }
+    }
+
     const text = `*MAJOR ASSISTÊNCIA TÉCNICA* 📱
 Olá *${os.client.nome}*, segue o comprovante da sua Ordem de Serviço:
 
@@ -49,7 +65,7 @@ Olá *${os.client.nome}*, segue o comprovante da sua Ordem de Serviço:
 🔧 *Serviço:* ${os.descricao_servico || 'Manutenção e reparo especializado'}
 💰 *Valor:* R$ ${os.valor.toFixed(2)}
 📅 *Entrada:* ${entryDate}
-🛡️ *Garantia até:* ${warrantyDate} ${os.garantia_cobertura ? `(${os.garantia_cobertura})` : ''}
+🛡️ *Garantia até:* ${warrantyDate} ${os.garantia_cobertura ? `(${os.garantia_cobertura})` : ''}${checklistText}
 
 Agradecemos a preferência!
 *MAJOR - Assistência Técnica para Smartphones*`;
@@ -154,6 +170,44 @@ Agradecemos a preferência!
                 {os.descricao_servico || 'Manutenção e reparo especializado em smartphone.'}
               </div>
             </div>
+
+            {/* Checklist do Aparelho (se houver itens preenchidos) */}
+            {os.checklist && (
+              (() => {
+                const filledItems = Object.entries(
+                  os.checklist as Record<string, ChecklistItemState>
+                ).filter(([_, it]) => Boolean(it?.status || (it?.obs && it.obs.trim())));
+
+                if (filledItems.length === 0) return null;
+
+                return (
+                  <div className="pt-2">
+                    <span className="text-slate-500 font-semibold block mb-1">
+                      Checklist de Entrada do Aparelho:
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-3 bg-slate-50/70 rounded-xl border border-slate-100">
+                      {filledItems.map(([name, item]) => (
+                        <div key={name} className="flex flex-col text-[11px]">
+                          <span className="font-semibold text-slate-800 flex items-center gap-1">
+                            {item.status === 'ok'
+                              ? '✅'
+                              : item.status === 'nok'
+                              ? '❌'
+                              : '⚪'}{' '}
+                            {name}
+                          </span>
+                          {item.obs && item.obs.trim() ? (
+                            <span className="text-slate-500 italic text-[10px] pl-4">
+                              Obs: {item.obs.trim()}
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()
+            )}
           </div>
 
           {/* Financial & Warranty Summary */}

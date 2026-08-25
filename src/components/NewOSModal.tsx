@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { createServiceOrder, uploadChecklistPhoto, fileToDataUrl } from '../lib/supabase';
-import type { OSWithDetails } from '../types';
+import type { OSWithDetails, DeviceChecklist } from '../types';
+import { ChecklistEditor } from './ChecklistEditor';
 
 interface NewOSModalProps {
   isOpen: boolean;
@@ -46,6 +47,9 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
   const [showImei, setShowImei] = useState(false);
   const [valor, setValor] = useState('');
   const [descricaoServico, setDescricaoServico] = useState('');
+
+  // Device Test Checklist
+  const [checklist, setChecklist] = useState<DeviceChecklist>({});
 
   // Checklist Photos (Entrada)
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
@@ -143,6 +147,7 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
           aparelhoImei: showImei && aparelhoImei ? aparelhoImei : undefined,
           valor: numericVal,
           descricaoServico: descricaoServico || undefined,
+          checklist: Object.keys(checklist).length > 0 ? checklist : undefined,
           fotosEntrada: uploadedPhotos,
         },
         user?.id
@@ -346,6 +351,12 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
               />
             </div>
           </div>
+
+          {/* Checklist de Testes do Aparelho */}
+          <ChecklistEditor
+            checklist={checklist}
+            onChange={setChecklist}
+          />
 
           {/* Grupo 3: Checklist de Entrada & Fotos */}
           <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-3">
