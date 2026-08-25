@@ -1,0 +1,120 @@
+export const SUPABASE_SETUP_SQL = `-- ==============================================================================
+-- SISTEMA MAJOR - ASSISTÊNCIA TÉCNICA PARA SMARTPHONES
+-- SCRIPT COMPLETO DE CONFIGURAÇÃO DO SUPABASE (POSTGRES + RLS + STORAGE)
+-- ==============================================================================
+-- Execute este script no SQL Editor do seu Dashboard Supabase (https://supabase.com/dashboard)
+
+-- 1. Habilitar extensões necessárias
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 2. Tabela de CLIENTES
+CREATE TABLE IF NOT EXISTS public.clients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome TEXT NOT NULL,
+    telefone TEXT NOT NULL,
+    criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 3. Tabela de APARELHOS (DEVICES)
+CREATE TABLE IF NOT EXISTS public.devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+    marca TEXT NOT NULL,
+    modelo TEXT NOT NULL,
+    imei TEXT,
+    criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 4. Tabela de ORDENS DE SERVIÇO (SERVICE_ORDERS)
+CREATE TABLE IF NOT EXISTS public.service_orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    device_id UUID NOT NULL REFERENCES public.devices(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'recebido' CHECK (status IN ('recebido', 'em_reparo', 'pronto', 'entregue')),
+    valor NUMERIC(10,2) DEFAULT 0.00 NOT NULL,
+    data_entrada TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    data_saida TIMESTAMPTZ,
+    descricao_servico TEXT,
+    garantia_fim DATE,
+    garantia_cobertura TEXT,
+    criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 5. Tabela de FOTOS DO CHECKLIST (ENTRADA / SAÍDA)
+CREATE TABLE IF NOT EXISTS public.checklist_photos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_order_id UUID NOT NULL REFERENCES public.service_orders(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL CHECK (tipo IN ('entrada', 'saida')),
+    categoria TEXT DEFAULT 'geral',
+    url_foto TEXT NOT NULL,
+    observacao TEXT,
+    criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 6. Índices para performance em buscas e listagens
+CREATE INDEX IF NOT EXISTS idx_clients_nome ON public.clients(nome);
+CREATE INDEX IF NOT EXISTS idx_clients_telefone ON public.clients(telefone);
+CREATE INDEX IF NOT EXISTS idx_devices_client_id ON public.devices(client_id);
+CREATE INDEX IF NOT EXISTS idx_service_orders_device_id ON public.service_orders(device_id);
+CREATE INDEX IF NOT EXISTS idx_service_orders_status ON public.service_orders(status);
+CREATE INDEX IF NOT EXISTS idx_checklist_photos_so_id ON public.checklist_photos(service_order_id);
+
+-- 7. Configuração de RLS (Row Level Security)
+ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.service_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.checklist_photos ENABLE ROW LEVEL SECURITY;
+
+-- Políticas de acesso para usuários autenticados (técnicos/atendentes da loja Major)
+DROP POLICY IF EXISTS "Permitir acesso completo aos clientes para autenticados" ON public.clients;
+CREATE POLICY "Permitir acesso completo aos clientes para autenticados"
+    ON public.clients FOR ALL
+    TO authenticated
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir acesso completo aos aparelhos para autenticados" ON public.devices;
+CREATE POLICY "Permitir acesso completo aos aparelhos para autenticados"
+    ON public.devices FOR ALL
+    TO authenticated
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir acesso completo às OS para autenticados" ON public.service_orders;
+CREATE POLICY "Permitir acesso completo às OS para autenticados"
+    ON public.service_orders FOR ALL
+    TO authenticated
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir acesso completo às fotos para autenticados" ON public.checklist_photos;
+CREATE POLICY "Permitir acesso completo às fotos para autenticados"
+    ON public.checklist_photos FOR ALL
+    TO authenticated
+    USING (true)
+    WITH CHECK (true);
+
+-- 8. Storage Bucket para fotos do checklist (major-photos)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('major-photos', 'major-photos', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Políticas do Storage para o bucket major-photos
+DROP POLICY IF EXISTS "Permitir upload de fotos para autenticados" ON storage.objects;
+CREATE POLICY "Permitir upload de fotos para autenticados"
+    ON storage.objects FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'major-photos');
+
+DROP POLICY IF EXISTS "Permitir leitura pública das fotos" ON storage.objects;
+CREATE POLICY "Permitir leitura pública das fotos"
+    ON storage.objects FOR SELECT
+    TO public
+    USING (bucket_id = 'major-photos');
+
+DROP POLICY IF EXISTS "Permitir deletar fotos para autenticados" ON storage.objects;
+CREATE POLICY "Permitir deletar fotos para autenticados"
+    ON storage.objects FOR DELETE
+    TO authenticated
+    USING (bucket_id = 'major-photos');
+`;

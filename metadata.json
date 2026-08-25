@@ -1,0 +1,6 @@
+{
+  "name": "Major - Assistência Técnica",
+  "description": "Sistema de Gestão de Ordens de Serviço para assistência técnica de smartphones Major, integrado com Supabase.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

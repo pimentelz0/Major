@@ -1,0 +1,23 @@
+{
+  "name": "MAJOR Assistência Técnica",
+  "short_name": "MAJOR",
+  "description": "Sistema de Gestão de Ordens de Serviço MAJOR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1B4A",
+  "theme_color": "#0B1B4A",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="115" fill="#0B1B4A"/>
+  <rect width="512" height="256" rx="115" fill="white" opacity="0.04"/>
+  <text 
+    x="50%" 
+    y="54%" 
+    dominant-baseline="central" 
+    text-anchor="middle" 
+    fill="#FFFFFF" 
+    font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+    font-weight="900" 
+    font-size="290" 
+    letter-spacing="-0.03em"
+  >
+    M
+  </text>
+</svg>
