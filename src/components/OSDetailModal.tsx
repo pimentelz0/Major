@@ -22,10 +22,11 @@ import {
   Check,
   RefreshCw,
   Tag,
+  Calendar,
 } from 'lucide-react';
 import type { OSWithDetails, OSStatus, DeviceChecklist, ChecklistPhoto } from '../types';
 import { ChecklistEditor } from './ChecklistEditor';
-import { sendWhatsAppOS } from '../utils/whatsapp';
+import { sendWhatsAppOS, sendWhatsAppOSWithPhotos, shareSinglePhotoToWhatsApp } from '../utils/whatsapp';
 import {
   updateServiceOrderStatus,
   updateFullServiceOrder,
@@ -73,6 +74,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   // Editable Client & Device states
   const [editClientName, setEditClientName] = useState(os.client?.nome || '');
   const [editClientPhone, setEditClientPhone] = useState(os.client?.telefone || '');
+  const [editClientBirthDate, setEditClientBirthDate] = useState(os.client?.data_nascimento || '');
   const [editDeviceBrand, setEditDeviceBrand] = useState(os.device?.marca || '');
   const [editDeviceModel, setEditDeviceModel] = useState(os.device?.modelo || '');
   const [editDeviceImei, setEditDeviceImei] = useState(os.device?.imei || '');
@@ -101,6 +103,8 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   // UI state
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const [whatsAppSuccess, setWhatsAppSuccess] = useState(false);
   const [uploadingEntryPhoto, setUploadingEntryPhoto] = useState(false);
   const [uploadingExitPhoto, setUploadingExitPhoto] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -119,6 +123,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
       setPhotosList(os.photos || []);
       setEditClientName(os.client?.nome || '');
       setEditClientPhone(os.client?.telefone || '');
+      setEditClientBirthDate(os.client?.data_nascimento || '');
       setEditDeviceBrand(os.device?.marca || '');
       setEditDeviceModel(os.device?.modelo || '');
       setEditDeviceImei(os.device?.imei || '');
@@ -180,6 +185,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
         const { error: err } = await updateFullServiceOrder(os.id, {
           clienteNome: editClientName,
           clienteTelefone: editClientPhone,
+          clienteDataNascimento: editClientBirthDate || undefined,
           aparelhoMarca: editDeviceBrand,
           aparelhoModelo: editDeviceModel,
           aparelhoImei: editDeviceImei,
@@ -206,6 +212,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
             id: os.client?.id || '',
             nome: editClientName.trim(),
             telefone: editClientPhone.replace(/\D/g, ''),
+            data_nascimento: editClientBirthDate || undefined,
           },
           device: {
             ...os.device,
@@ -484,10 +491,9 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   };
 
 
-  // WhatsApp quick trigger with complete OS & checklist
-  const handleWhatsApp = () => {
+  const getCurrentOSPayload = (): OSWithDetails => {
     const numVal = parseFloat(valor.replace(',', '.')) || 0;
-    const currentOSPayload: OSWithDetails = {
+    return {
       ...os,
       status: currentStatus,
       descricao_servico: descricaoServico.trim(),
@@ -511,8 +517,24 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
       },
       photos: photosList,
     };
+  };
 
-    sendWhatsAppOS(currentOSPayload);
+  // WhatsApp quick trigger with complete OS, checklist, and all attached photos
+  const handleWhatsApp = async () => {
+    setSendingWhatsApp(true);
+    setError(null);
+    try {
+      const currentOSPayload = getCurrentOSPayload();
+      await sendWhatsAppOSWithPhotos(currentOSPayload);
+      setWhatsAppSuccess(true);
+      setTimeout(() => setWhatsAppSuccess(false), 3000);
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.error('Erro ao enviar via WhatsApp:', err);
+      }
+    } finally {
+      setSendingWhatsApp(false);
+    }
   };
 
   return (
@@ -676,6 +698,18 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0B1B4A] outline-none bg-white"
                   />
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-[#0B1B4A]" />
+                    Data de Nascimento (Opcional)
+                  </label>
+                  <input
+                    type="date"
+                    value={editClientBirthDate}
+                    onChange={(e) => setEditClientBirthDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0B1B4A] outline-none bg-white text-slate-700 font-medium"
+                  />
+                </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">Marca</label>
                   <input
@@ -707,7 +741,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
             </div>
           ) : (
             /* Client & Device Summary Box */
-            <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 flex items-center justify-between gap-3 text-xs">
+            <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="space-y-1">
                 <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">WhatsApp Cliente</span>
                 <p className="font-bold text-slate-800 flex items-center gap-1">
@@ -715,6 +749,16 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                   {os.client?.telefone || 'Não informado'}
                 </p>
               </div>
+
+              {os.client?.data_nascimento && (
+                <div className="space-y-1">
+                  <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">Nascimento</span>
+                  <p className="font-bold text-slate-800 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#0B1B4A]" />
+                    {os.client.data_nascimento.split('-').reverse().join('/')}
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">IMEI</span>
@@ -979,23 +1023,39 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Top Right Quick Delete Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeletePhoto(p.id);
-                          }}
-                          disabled={isDeletingThis}
-                          className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/60 hover:bg-rose-600 text-white transition-colors shadow"
-                          title="Excluir foto"
-                        >
-                          {isDeletingThis ? (
-                            <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
-                          ) : (
-                            <Trash2 className="w-3 h-3" />
-                          )}
-                        </button>
+                        {/* Top Actions: WhatsApp & Delete */}
+                        <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                          {/* Quick WhatsApp Photo Share Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              shareSinglePhotoToWhatsApp(p, getCurrentOSPayload());
+                            }}
+                            className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow"
+                            title="Enviar esta foto no WhatsApp"
+                          >
+                            <MessageCircle className="w-3 h-3" />
+                          </button>
+
+                          {/* Quick Delete Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePhoto(p.id);
+                            }}
+                            disabled={isDeletingThis}
+                            className="p-1.5 rounded-lg bg-black/60 hover:bg-rose-600 text-white transition-colors shadow"
+                            title="Excluir foto"
+                          >
+                            {isDeletingThis ? (
+                              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
 
                         {/* Bottom Label Badge */}
                         <div className="absolute bottom-1.5 left-1.5 right-1.5 pointer-events-none flex items-center justify-between gap-1">
@@ -1025,10 +1085,27 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
             <button
               type="button"
               onClick={handleWhatsApp}
-              className="py-2.5 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95"
+              disabled={sendingWhatsApp}
+              className="py-2.5 px-4 bg-[#0B1B4A] hover:bg-[#142866] text-white font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95 disabled:opacity-60"
             >
-              <MessageCircle className="w-4 h-4 text-emerald-400" />
-              <span>Enviar OS e Checklist (WhatsApp)</span>
+              {sendingWhatsApp ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Preparando OS e Anexos...</span>
+                </>
+              ) : whatsAppSuccess ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Enviado com Sucesso!</span>
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="w-4 h-4 text-emerald-400" />
+                  <span>
+                    Enviar OS e Checklist {photosList.length > 0 ? `(+${photosList.length} foto${photosList.length > 1 ? 's' : ''})` : ''}
+                  </span>
+                </>
+              )}
             </button>
 
             <button
@@ -1154,16 +1231,28 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => handleDeletePhoto(selectedPhotoForEdit.id)}
-                disabled={savingPhotoEdit}
-                className="px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                <span>Excluir Foto</span>
-              </button>
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => shareSinglePhotoToWhatsApp(selectedPhotoForEdit, getCurrentOSPayload())}
+                  className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                  title="Enviar esta foto diretamente para o WhatsApp do cliente"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Enviar Foto no WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDeletePhoto(selectedPhotoForEdit.id)}
+                  disabled={savingPhotoEdit}
+                  className="px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Excluir</span>
+                </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button

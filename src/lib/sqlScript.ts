@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nome TEXT NOT NULL,
     telefone TEXT NOT NULL,
+    data_nascimento DATE,
     criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     criado_em TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS public.service_orders (
 
 -- Garantir colunas essenciais caso as tabelas já existam:
 ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS data_nascimento DATE;
 ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE public.service_orders ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE public.service_orders ADD COLUMN IF NOT EXISTS checklist JSONB;
@@ -88,14 +90,14 @@ DROP POLICY IF EXISTS "Acesso individual às fotos" ON public.checklist_photos;
 CREATE POLICY "Acesso individual aos clientes"
     ON public.clients FOR ALL
     TO authenticated
-    USING (criado_por = auth.uid() OR criado_por IS NULL)
+    USING (criado_por = auth.uid())
     WITH CHECK (criado_por = auth.uid());
 
 -- 2. Políticas isoladas para APARELHOS (cada usuário acessa apenas seus aparelhos cadastrados)
 CREATE POLICY "Acesso individual aos aparelhos"
     ON public.devices FOR ALL
     TO authenticated
-    USING (criado_por = auth.uid() OR criado_por IS NULL)
+    USING (criado_por = auth.uid())
     WITH CHECK (criado_por = auth.uid());
 
 -- 3. Políticas isoladas para ORDENS DE SERVIÇO (cada usuário só vê e gerencia suas próprias OS)

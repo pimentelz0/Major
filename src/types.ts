@@ -31,6 +31,7 @@ export interface Client {
   id: string;
   nome: string;
   telefone: string;
+  data_nascimento?: string | null;
   criado_em: string;
 }
 
@@ -74,9 +75,21 @@ export interface OSWithDetails extends ServiceOrder {
   photos?: ChecklistPhoto[];
 }
 
+export interface ClientWithDetails extends Client {
+  devices?: (Device & { service_orders?: ServiceOrder[] })[];
+  service_orders?: OSWithDetails[];
+  total_spent?: number;
+  active_os_count?: number;
+  total_os_count?: number;
+  last_service_date?: string | null;
+}
+
 export interface CreateOSPayload {
+  clienteId?: string;
   clienteNome: string;
   clienteTelefone: string;
+  clienteDataNascimento?: string;
+  aparelhoId?: string;
   aparelhoMarca: string;
   aparelhoModelo: string;
   aparelhoImei?: string;

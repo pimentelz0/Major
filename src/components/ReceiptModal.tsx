@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { X, MessageCircle, ShieldCheck, Phone, Image as ImageIcon, Check } from 'lucide-react';
+import { X, MessageCircle, ShieldCheck, Phone, Image as ImageIcon, Check, Camera } from 'lucide-react';
 import type { OSWithDetails, ChecklistItemState } from '../types';
 import { toPng } from 'html-to-image';
-import { sendWhatsAppReceipt } from '../utils/whatsapp';
+import { sendWhatsAppReceipt, getOSAttachedPhotoFiles, formatWhatsAppReceiptMessage } from '../utils/whatsapp';
 
 interface ReceiptModalProps {
   os: OSWithDetails | null;
@@ -44,12 +44,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
       )
     : [];
 
+  const attachedPhotos = os.photos || [];
+
   const handleSendImageToClient = async () => {
     if (!export916Ref.current) return;
     setGeneratingImage(true);
 
     try {
-      // Generate ultra clean high-definition 9:16 (1080x1920) image with zero shadow artifacts
+      // 1. Generate ultra clean high-definition 9:16 (1080x1920) image with zero shadow artifacts
       const dataUrl = await toPng(export916Ref.current, {
         quality: 1,
         pixelRatio: 2,
@@ -60,16 +62,20 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
       const response = await fetch(dataUrl);
       const blob = await response.blob();
       const clientFileName = (os.client?.nome || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-      const imageFile = new File([blob], `Comprovante_OS_${shortId}_${clientFileName}.png`, {
+      const receiptImageFile = new File([blob], `Comprovante_OS_${shortId}_${clientFileName}.png`, {
         type: 'image/png',
       });
 
-      // Try native share (e.g. directly to WhatsApp on mobile or supported desktop)
-      if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
+      // 2. Fetch/Prepare all attached photos (entrada e saída)
+      const attachedPhotoFiles = await getOSAttachedPhotoFiles(os);
+      const allFilesToSend = [receiptImageFile, ...attachedPhotoFiles];
+
+      // 3. Try native share (directly to WhatsApp on mobile or supported desktop with ALL photos + receipt image attached!)
+      if (navigator.canShare && navigator.canShare({ files: allFilesToSend })) {
         await navigator.share({
-          files: [imageFile],
+          files: allFilesToSend,
           title: `Comprovante OS #${shortId} - MAJOR Assistência`,
-          text: `Comprovante da Ordem de Serviço #${shortId} (${os.device?.marca} ${os.device?.modelo})`,
+          text: formatWhatsAppReceiptMessage(os),
         });
         setSuccessNotice(true);
         setTimeout(() => setSuccessNotice(false), 3000);
@@ -82,6 +88,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
         downloadLink.click();
         document.body.removeChild(downloadLink);
 
+        // Also download attached photos if any so technician has them handy
+        if (attachedPhotoFiles.length > 0) {
+          attachedPhotoFiles.forEach((file, idx) => {
+            setTimeout(() => {
+              const u = URL.createObjectURL(file);
+              const a = document.createElement('a');
+              a.href = u;
+              a.download = file.name;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(u), 2000);
+            }, (idx + 1) * 250);
+          });
+        }
+
         setSuccessNotice(true);
         setTimeout(() => setSuccessNotice(false), 3000);
 
@@ -90,8 +112,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
           sendWhatsAppReceipt(os);
         }
       }
-    } catch (err) {
-      console.error('Erro ao gerar imagem 9:16:', err);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
+      console.error('Erro ao gerar imagem 9:16 ou enviar anexos:', err);
       // Fallback to text WhatsApp
       sendWhatsAppReceipt(os);
     } finally {
@@ -223,6 +248,37 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
                   </div>
                 </div>
               )}
+
+              {/* Attached Photos Preview Section */}
+              {attachedPhotos.length > 0 && (
+                <div className="pt-1">
+                  <span className="text-slate-500 font-semibold block mb-1.5 flex items-center gap-1">
+                    <Camera className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Fotos Anexadas do Aparelho ({attachedPhotos.length}):</span>
+                  </span>
+                  <div className="grid grid-cols-2 gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    {attachedPhotos.map((photo, idx) => (
+                      <div
+                        key={photo.id || idx}
+                        className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-900 aspect-video flex items-center justify-center shadow-xs"
+                      >
+                        <img
+                          src={photo.url_foto}
+                          alt={photo.tipo}
+                          className="w-full h-full object-cover"
+                        />
+                        <span
+                          className={`absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white shadow ${
+                            photo.tipo === 'saida' ? 'bg-emerald-600' : 'bg-[#0B1B4A]'
+                          }`}
+                        >
+                          {photo.tipo === 'saida' ? 'Foto de Saída' : 'Foto de Entrada'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Total & Warranty */}
@@ -281,17 +337,19 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
             {generatingImage ? (
               <span className="flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Gerando Imagem HD (9:16)...</span>
+                <span>Preparando Imagem e Anexos...</span>
               </span>
             ) : successNotice ? (
               <span className="flex items-center gap-1.5 text-emerald-400">
                 <Check className="w-4 h-4" />
-                <span>Comprovante Enviado com Sucesso!</span>
+                <span>Comprovante e Fotos Enviados!</span>
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4 text-emerald-400" />
-                <span>Enviar comprovante para o cliente</span>
+                <span>
+                  Enviar comprovante {attachedPhotos.length > 0 ? `+ ${attachedPhotos.length} foto(s)` : ''} para o cliente
+                </span>
               </span>
             )}
           </button>
@@ -322,13 +380,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
           className="p-7 flex flex-col justify-between text-slate-900 font-sans box-border"
         >
           {/* Top Section */}
-          <div className="space-y-4">
+          <div className="space-y-3.5">
             {/* Header Branding */}
-            <div className="text-center pb-4 border-b border-slate-200">
-              <div className="flex items-center justify-center gap-2.5 mb-1.5">
+            <div className="text-center pb-3 border-b border-slate-200">
+              <div className="flex items-center justify-center gap-2.5 mb-1">
                 <div
                   style={{ backgroundColor: '#0B1B4A' }}
-                  className="w-11 h-11 rounded-2xl text-white flex items-center justify-center font-black text-lg"
+                  className="w-10 h-10 rounded-2xl text-white flex items-center justify-center font-black text-lg"
                 >
                   M
                 </div>
@@ -341,7 +399,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
               </p>
               <div
                 style={{ color: '#0B1B4A', backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }}
-                className="mt-3 inline-block px-5 py-1.5 rounded-full font-mono text-xs font-bold border"
+                className="mt-2.5 inline-block px-5 py-1 rounded-full font-mono text-xs font-bold border"
               >
                 ORDEM DE SERVIÇO #{shortId}
               </div>
@@ -350,7 +408,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
             {/* Client & Device Box */}
             <div
               style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
-              className="grid grid-cols-2 gap-4 p-4 rounded-2xl border"
+              className="grid grid-cols-2 gap-4 p-3.5 rounded-2xl border"
             >
               <div>
                 <span className="text-slate-500 font-bold uppercase text-[10px] block mb-1 tracking-wider">
@@ -380,22 +438,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
             </div>
 
             {/* Dates & Status */}
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500 font-semibold">Data de Entrada:</span>
                 <span className="font-bold text-slate-800">{entryDate}</span>
               </div>
               {os.data_saida && (
-                <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <div className="flex justify-between py-1 border-b border-slate-100">
                   <span className="text-slate-500 font-semibold">Data de Saída:</span>
                   <span className="font-bold text-slate-800">{exitDate}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1.5 border-b border-slate-100 items-center">
+              <div className="flex justify-between py-1 border-b border-slate-100 items-center">
                 <span className="text-slate-500 font-semibold">Status Atual:</span>
                 <span
                   style={{ color: '#0B1B4A', backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
-                  className="font-extrabold uppercase px-3 py-1 rounded-lg border text-xs"
+                  className="font-extrabold uppercase px-3 py-0.5 rounded-lg border text-xs"
                 >
                   {os.status}
                 </span>
@@ -409,7 +467,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
               </span>
               <div
                 style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
-                className="p-3.5 rounded-xl border text-slate-900 font-medium text-xs leading-relaxed"
+                className="p-3 rounded-xl border text-slate-900 font-medium text-xs leading-relaxed"
               >
                 {os.descricao_servico || 'Manutenção e reparo especializado em smartphone.'}
               </div>
@@ -418,33 +476,33 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
             {/* Checklist */}
             {filledChecklist.length > 0 && (
               <div>
-                <span className="text-slate-500 font-bold uppercase text-[10px] block mb-1.5 tracking-wider">
+                <span className="text-slate-500 font-bold uppercase text-[10px] block mb-1 tracking-wider">
                   Checklist de Entrada do Aparelho:
                 </span>
                 <div
                   style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
-                  className="grid grid-cols-2 gap-2.5 p-3.5 rounded-xl border"
+                  className="grid grid-cols-2 gap-2 p-2.5 rounded-xl border"
                 >
-                  {filledChecklist.map(([name, item]) => (
-                    <div key={name} className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+                  {filledChecklist.slice(0, 8).map(([name, item]) => (
+                    <div key={name} className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
                       {item.status === 'ok' ? (
                         <span
                           style={{ backgroundColor: '#10B981' }}
-                          className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[10px] font-black shrink-0"
+                          className="w-3.5 h-3.5 rounded-full text-white flex items-center justify-center text-[9px] font-black shrink-0"
                         >
                           ✓
                         </span>
                       ) : item.status === 'nok' ? (
                         <span
                           style={{ backgroundColor: '#EF4444' }}
-                          className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[10px] font-black shrink-0"
+                          className="w-3.5 h-3.5 rounded-full text-white flex items-center justify-center text-[9px] font-black shrink-0"
                         >
                           ✕
                         </span>
                       ) : (
                         <span
                           style={{ backgroundColor: '#94A3B8' }}
-                          className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[10px] font-black shrink-0"
+                          className="w-3.5 h-3.5 rounded-full text-white flex items-center justify-center text-[9px] font-black shrink-0"
                         >
                           -
                         </span>
@@ -455,16 +513,49 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
                 </div>
               </div>
             )}
+
+            {/* Attached Photos in 9:16 Canvas */}
+            {attachedPhotos.length > 0 && (
+              <div>
+                <span className="text-slate-500 font-bold uppercase text-[10px] block mb-1 tracking-wider">
+                  Fotos Anexadas do Aparelho:
+                </span>
+                <div
+                  style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
+                  className="grid grid-cols-2 gap-2 p-2 rounded-xl border"
+                >
+                  {attachedPhotos.slice(0, 2).map((photo, idx) => (
+                    <div
+                      key={photo.id || idx}
+                      className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video bg-slate-100 flex items-center justify-center"
+                    >
+                      <img
+                        src={photo.url_foto}
+                        alt={photo.tipo}
+                        crossOrigin="anonymous"
+                        className="w-full h-full object-cover"
+                      />
+                      <span
+                        style={{ backgroundColor: photo.tipo === 'saida' ? '#059669' : '#0B1B4A' }}
+                        className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white"
+                      >
+                        {photo.tipo === 'saida' ? 'Foto de Saída' : 'Foto de Entrada'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Bottom Section: Total, Warranty, Signatures */}
-          <div className="space-y-4 pt-2">
+          <div className="space-y-3.5 pt-2">
             {/* Total & Warranty Box */}
             <div
               style={{ backgroundColor: '#0B1B4A' }}
-              className="text-white p-5 rounded-2xl space-y-2.5"
+              className="text-white p-4 rounded-2xl space-y-2"
             >
-              <div className="flex justify-between items-center pb-2.5 border-b border-white/20">
+              <div className="flex justify-between items-center pb-2 border-b border-white/20">
                 <span className="text-xs text-slate-300 font-bold uppercase tracking-wider">
                   Valor Total:
                 </span>
@@ -492,13 +583,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
             {/* Signatures */}
             <div className="grid grid-cols-2 gap-8 text-center text-xs text-slate-500 pt-1">
               <div>
-                <div className="border-t border-slate-300 pt-2 font-bold text-slate-800">
+                <div className="border-t border-slate-300 pt-1.5 font-bold text-slate-800">
                   Assinatura do Técnico
                 </div>
                 <span className="text-[11px] text-slate-500 font-medium">MAJOR Assistência</span>
               </div>
               <div>
-                <div className="border-t border-slate-300 pt-2 font-bold text-slate-800 truncate">
+                <div className="border-t border-slate-300 pt-1.5 font-bold text-slate-800 truncate">
                   Assinatura do Cliente
                 </div>
                 <span className="text-[11px] text-slate-500 font-medium truncate block">
@@ -508,7 +599,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
             </div>
 
             {/* Footer Watermark */}
-            <div className="text-center pt-1">
+            <div className="text-center pt-0.5">
               <p className="text-[10px] text-slate-400 font-bold tracking-[0.2em] uppercase">
                 MAJOR ASSISTÊNCIA TÉCNICA ESPECIALIZADA
               </p>
@@ -519,3 +610,4 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ os, isOpen, onClose 
     </div>
   );
 };
+

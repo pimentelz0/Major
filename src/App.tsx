@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
+import { ClientsTab } from './components/ClientsTab';
 import { LoginScreen } from './components/LoginScreen';
 import { NewOSModal } from './components/NewOSModal';
 import { OSDetailModal } from './components/OSDetailModal';
@@ -12,12 +13,35 @@ import type { OSWithDetails } from './types';
 function MainApp() {
   const { user, loading } = useAuth();
 
+  // Navigation tab state
+  const [activeTab, setActiveTab] = useState<'os' | 'clientes'>('os');
+
   // Modals state
   const [isNewOSOpen, setIsNewOSOpen] = useState(false);
+  const [initialClientForOS, setInitialClientForOS] = useState<{
+    id?: string;
+    nome: string;
+    telefone: string;
+    data_nascimento?: string | null;
+  } | null>(null);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [selectedOS, setSelectedOS] = useState<OSWithDetails | null>(null);
   const [receiptOS, setReceiptOS] = useState<OSWithDetails | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
+
+  const handleOpenNewOS = (client?: {
+    id?: string;
+    nome: string;
+    telefone: string;
+    data_nascimento?: string | null;
+  }) => {
+    if (client) {
+      setInitialClientForOS(client);
+    } else {
+      setInitialClientForOS(null);
+    }
+    setIsNewOSOpen(true);
+  };
 
   if (loading) {
     return (
@@ -49,25 +73,41 @@ function MainApp() {
   // Logged in -> Show Full Major Technical Assistance Workspace
   return (
     <div className="min-h-screen bg-[#F4F7FE] flex flex-col text-slate-800 font-sans selection:bg-[#0B1B4A] selection:text-white">
-      {/* Header Bar */}
+      {/* Header Bar with Tabs & Birthday Notification */}
       <Navbar
+        activeTab={activeTab}
+        onTabChange={(tab) => setActiveTab(tab)}
         onOpenSqlModal={() => setIsSqlModalOpen(true)}
+        lastUpdated={lastUpdated}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 pb-16">
-        <Dashboard
-          onOpenNewOS={() => setIsNewOSOpen(true)}
-          onSelectOS={(os) => setSelectedOS(os)}
-          onOpenSqlModal={() => setIsSqlModalOpen(true)}
-          lastUpdated={lastUpdated}
-        />
+        {activeTab === 'os' ? (
+          <Dashboard
+            onOpenNewOS={() => handleOpenNewOS()}
+            onSelectOS={(os) => setSelectedOS(os)}
+            onOpenSqlModal={() => setIsSqlModalOpen(true)}
+            lastUpdated={lastUpdated}
+          />
+        ) : (
+          <ClientsTab
+            onNewOSForClient={(client) => handleOpenNewOS(client)}
+            onSelectOS={(os) => setSelectedOS(os)}
+            lastUpdated={lastUpdated}
+            onRefreshAll={() => setLastUpdated(Date.now())}
+          />
+        )}
       </main>
 
       {/* Modals */}
       <NewOSModal
         isOpen={isNewOSOpen}
-        onClose={() => setIsNewOSOpen(false)}
+        initialClient={initialClientForOS}
+        onClose={() => {
+          setIsNewOSOpen(false);
+          setInitialClientForOS(null);
+        }}
         onSuccess={() => {
           setLastUpdated(Date.now());
         }}

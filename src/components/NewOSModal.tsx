@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   User,
@@ -13,17 +13,22 @@ import {
   AlertCircle,
   FileText,
   MessageCircle,
+  Calendar,
+  UserPlus,
+  Check,
+  Search,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { createServiceOrder, uploadChecklistPhoto, fileToDataUrl } from '../lib/supabase';
-import type { OSWithDetails, DeviceChecklist } from '../types';
+import { createServiceOrder, fetchClients, uploadChecklistPhoto, fileToDataUrl } from '../lib/supabase';
+import type { OSWithDetails, DeviceChecklist, ClientWithDetails } from '../types';
 import { ChecklistEditor } from './ChecklistEditor';
-import { sendWhatsAppOS } from '../utils/whatsapp';
+import { sendWhatsAppOSWithPhotos } from '../utils/whatsapp';
 
 interface NewOSModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (newOS: OSWithDetails) => void;
+  initialClient?: { id?: string; nome: string; telefone: string; data_nascimento?: string | null } | null;
 }
 
 interface PhotoItem {
@@ -36,13 +41,27 @@ interface PhotoItem {
 
 const COMMON_BRANDS = ['Apple', 'Samsung', 'Xiaomi', 'Motorola', 'Outro'];
 
-export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const NewOSModal: React.FC<NewOSModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  initialClient,
+}) => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Clients from database for quick selection
+  const [savedClients, setSavedClients] = useState<ClientWithDetails[]>([]);
+  const [loadingClients, setLoadingClients] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const clientPickerRef = useRef<HTMLDivElement>(null);
+
   // Form State
-  const [clienteNome, setClienteNome] = useState('');
-  const [clienteTelefone, setClienteTelefone] = useState('');
+  const [clienteNome, setClienteNome] = useState(initialClient?.nome || '');
+  const [clienteTelefone, setClienteTelefone] = useState(initialClient?.telefone || '');
+  const [clienteDataNascimento, setClienteDataNascimento] = useState(initialClient?.data_nascimento || '');
   const [aparelhoMarca, setAparelhoMarca] = useState('Apple');
   const [aparelhoModelo, setAparelhoModelo] = useState('');
   const [aparelhoImei, setAparelhoImei] = useState('');
@@ -61,11 +80,68 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (clientPickerRef.current && !clientPickerRef.current.contains(event.target as Node)) {
+        setShowClientSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Load clients when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadExistingClients = async () => {
+      setLoadingClients(true);
+      try {
+        const { data } = await fetchClients(user?.id);
+        if (data) {
+          setSavedClients(data);
+          // If initial client was provided, match it
+          if (initialClient) {
+            const matched = data.find(
+              (c) =>
+                (initialClient.id && c.id === initialClient.id) ||
+                (c.telefone && initialClient.telefone && c.telefone.replace(/\D/g, '') === initialClient.telefone.replace(/\D/g, '')) ||
+                c.nome.trim().toLowerCase() === initialClient.nome.trim().toLowerCase()
+            );
+            if (matched) {
+              setSelectedClientId(matched.id);
+              setClienteNome(matched.nome);
+              setClienteTelefone(handlePhoneFormat(matched.telefone));
+              if (matched.data_nascimento) {
+                setClienteDataNascimento(matched.data_nascimento);
+              }
+            } else {
+              setSelectedClientId(initialClient.id || null);
+              setClienteNome(initialClient.nome);
+              setClienteTelefone(handlePhoneFormat(initialClient.telefone));
+              if (initialClient.data_nascimento) {
+                setClienteDataNascimento(initialClient.data_nascimento);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao carregar clientes para o seletor:', err);
+      } finally {
+        setLoadingClients(false);
+      }
+    };
+
+    loadExistingClients();
+  }, [isOpen, user?.id, initialClient]);
+
   if (!isOpen) return null;
 
-  const handlePhoneChange = (val: string) => {
-    // Keep numbers and format as (XX) XXXXX-XXXX if possible
-    const cleaned = val.replace(/\D/g, '');
+  const handlePhoneFormat = (val: string) => {
+    const cleaned = (val || '').replace(/\D/g, '');
     let formatted = cleaned;
     if (cleaned.length > 2 && cleaned.length <= 6) {
       formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2)}`;
@@ -74,7 +150,73 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
     } else if (cleaned.length > 10) {
       formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7, 11)}`;
     }
-    setClienteTelefone(formatted);
+    return formatted;
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setClienteTelefone(handlePhoneFormat(val));
+  };
+
+  // Handle selecting an existing client from dropdown
+  const handleSelectClient = (clientId: string) => {
+    if (!clientId) {
+      // Clear selection to create new
+      setSelectedClientId(null);
+      setSelectedDeviceId(null);
+      return;
+    }
+
+    const client = savedClients.find((c) => c.id === clientId);
+    if (client) {
+      setSelectedClientId(client.id);
+      setClienteNome(client.nome);
+      setClienteTelefone(handlePhoneFormat(client.telefone));
+      setClienteDataNascimento(client.data_nascimento || '');
+      setSelectedDeviceId(null);
+
+      // If client has only 1 device, preselect it
+      if (client.devices && client.devices.length === 1) {
+        const dev = client.devices[0];
+        setSelectedDeviceId(dev.id);
+        setAparelhoMarca(dev.marca || 'Apple');
+        setAparelhoModelo(dev.modelo || '');
+        if (dev.imei) {
+          setAparelhoImei(dev.imei);
+          setShowImei(true);
+        }
+      }
+    }
+  };
+
+  // Handle selecting an existing device of the selected client
+  const handleSelectDevice = (devId: string) => {
+    if (!devId) {
+      setSelectedDeviceId(null);
+      setAparelhoModelo('');
+      setAparelhoImei('');
+      return;
+    }
+
+    const client = savedClients.find((c) => c.id === selectedClientId);
+    const dev = client?.devices?.find((d) => d.id === devId);
+    if (dev) {
+      setSelectedDeviceId(dev.id);
+      setAparelhoMarca(dev.marca || 'Apple');
+      setAparelhoModelo(dev.modelo || '');
+      if (dev.imei) {
+        setAparelhoImei(dev.imei);
+        setShowImei(true);
+      }
+    }
+  };
+
+  // Reset client selection to manual entry
+  const handleResetToNewClient = () => {
+    setSelectedClientId(null);
+    setSelectedDeviceId(null);
+    setClienteNome('');
+    setClienteTelefone('');
+    setClienteDataNascimento('');
   };
 
   const handleAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,18 +279,21 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
         });
       }
 
-      // 2. Insert into Supabase (clients + devices + service_orders + checklist_photos)
+      // 2. Insert into Supabase (reusing client/device if selected)
       const numericVal = parseFloat(valor.replace(',', '.')) || 0;
 
       const { data: createdOS, error: createError } = await createServiceOrder(
         {
-          clienteNome,
-          clienteTelefone,
+          clienteId: selectedClientId || undefined,
+          clienteNome: clienteNome.trim(),
+          clienteTelefone: clienteTelefone.trim(),
+          clienteDataNascimento: clienteDataNascimento || undefined,
+          aparelhoId: selectedDeviceId || undefined,
           aparelhoMarca,
-          aparelhoModelo,
-          aparelhoImei: showImei && aparelhoImei ? aparelhoImei : undefined,
+          aparelhoModelo: aparelhoModelo.trim(),
+          aparelhoImei: showImei && aparelhoImei ? aparelhoImei.trim() : undefined,
           valor: numericVal,
-          descricaoServico: descricaoServico || undefined,
+          descricaoServico: descricaoServico.trim() || undefined,
           checklist: Object.keys(checklist).length > 0 ? checklist : undefined,
           fotosEntrada: uploadedPhotos,
         },
@@ -159,9 +304,9 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
         throw new Error(createError?.message || 'Falha ao gravar Ordem de Serviço no Supabase');
       }
 
-      // 3. Send full OS message with checklist via WhatsApp if requested
+      // 3. Send full OS message with checklist and photos via WhatsApp if requested
       if (sendWhatsApp) {
-        sendWhatsAppOS(createdOS);
+        await sendWhatsAppOSWithPhotos(createdOS);
       }
 
       onSuccess(createdOS);
@@ -173,6 +318,8 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
       setLoading(false);
     }
   };
+
+  const selectedClientObj = savedClients.find((c) => c.id === selectedClientId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm overflow-y-auto">
@@ -211,24 +358,188 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
 
           {/* Grupo 1: Cliente */}
           <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#0B1B4A] flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-[#0B1B4A]" />
-              Dados do Cliente
-            </span>
+            <div className="flex items-center justify-between gap-2 pb-0.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#0B1B4A] flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-[#0B1B4A]" />
+                Dados do Cliente
+              </span>
+              {selectedClientId ? (
+                <button
+                  type="button"
+                  onClick={handleResetToNewClient}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 hover:underline"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  Digitar Novo Cliente
+                </button>
+              ) : savedClients.length > 0 ? (
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {savedClients.length} cliente{savedClients.length > 1 ? 's' : ''} cadastrado{savedClients.length > 1 ? 's' : ''}
+                </span>
+              ) : null}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nome do Cliente *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Carlos Eduardo"
-                  value={clienteNome}
-                  onChange={(e) => setClienteNome(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white"
-                />
+              {/* Nome do Cliente com Autocomplete e Seletor Integrado */}
+              <div className="relative" ref={clientPickerRef}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Nome do Cliente *
+                  </label>
+                  {savedClients.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowClientSuggestions((prev) => !prev)}
+                      className="text-[10px] text-blue-600 hover:text-[#0B1B4A] font-bold flex items-center gap-0.5"
+                    >
+                      <span>Ver clientes</span>
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Digite o nome ou selecione..."
+                    value={clienteNome}
+                    onFocus={() => {
+                      if (savedClients.length > 0) setShowClientSuggestions(true);
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setClienteNome(val);
+                      setShowClientSuggestions(true);
+                      if (selectedClientId) {
+                        const sel = savedClients.find((c) => c.id === selectedClientId);
+                        if (!sel || sel.nome.trim().toLowerCase() !== val.trim().toLowerCase()) {
+                          setSelectedClientId(null);
+                          setSelectedDeviceId(null);
+                        }
+                      }
+                    }}
+                    className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white font-medium shadow-xs"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowClientSuggestions((prev) => !prev)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-[#0B1B4A] hover:bg-slate-100 rounded-lg transition-colors"
+                    title="Alternar lista de clientes cadastrados"
+                  >
+                    {showClientSuggestions ? (
+                      <ChevronUp className="w-4 h-4 text-[#0B1B4A]" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Floating Autocomplete Dropdown */}
+                {showClientSuggestions && savedClients.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl shadow-xl border border-slate-200 z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 animate-fadeIn">
+                    <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600 sticky top-0 z-10">
+                      <span className="flex items-center gap-1">
+                        <Search className="w-3 h-3 text-slate-400" />
+                        Clientes na Base ({
+                          savedClients.filter((c) => {
+                            if (!clienteNome.trim()) return true;
+                            const q = clienteNome.toLowerCase().trim();
+                            const phoneClean = (c.telefone || '').replace(/\D/g, '');
+                            const searchClean = q.replace(/\D/g, '');
+                            return (
+                              c.nome.toLowerCase().includes(q) ||
+                              (searchClean && phoneClean.includes(searchClean))
+                            );
+                          }).length
+                        })
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">Clique para selecionar</span>
+                    </div>
+
+                    {(() => {
+                      const filtered = savedClients.filter((c) => {
+                        if (!clienteNome.trim()) return true;
+                        const q = clienteNome.toLowerCase().trim();
+                        const phoneClean = (c.telefone || '').replace(/\D/g, '');
+                        const searchClean = q.replace(/\D/g, '');
+                        return (
+                          c.nome.toLowerCase().includes(q) ||
+                          (searchClean && phoneClean.includes(searchClean))
+                        );
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-3 text-center text-xs text-slate-500">
+                            Nenhum cliente cadastrado com "{clienteNome}".
+                            <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                              ✓ Será cadastrado automaticamente na base ao salvar esta OS!
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return filtered.slice(0, 30).map((c) => {
+                        const isSelected = selectedClientId === c.id;
+                        const bdayFormatted = c.data_nascimento
+                          ? c.data_nascimento.split('-').reverse().join('/')
+                          : null;
+
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              handleSelectClient(c.id);
+                              setShowClientSuggestions(false);
+                            }}
+                            className={`w-full text-left p-2.5 hover:bg-blue-50/70 transition-colors flex items-center justify-between gap-2.5 ${
+                              isSelected ? 'bg-blue-50/80 text-[#0B1B4A]' : 'text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-[#0B1B4A] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                                {c.nome.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="truncate">
+                                <div className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                                  {c.nome}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                  <span>{handlePhoneFormat(c.telefone)}</span>
+                                  {bdayFormatted && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-slate-600 font-medium flex items-center gap-0.5">
+                                        <Calendar className="w-2.5 h-2.5 text-[#0B1B4A]" />
+                                        Nasc: {bdayFormatted}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 flex items-center gap-1.5">
+                              {c.devices && c.devices.length > 0 && (
+                                <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md hidden sm:inline">
+                                  {c.devices.length} aparelho{c.devices.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-emerald-600" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   WhatsApp *
@@ -240,20 +551,105 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
                     required
                     placeholder="(11) 99999-9999"
                     value={clienteTelefone}
-                    onChange={(e) => handlePhoneChange(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white"
+                    onChange={(e) => {
+                      handlePhoneChange(e.target.value);
+                      if (selectedClientId) setSelectedClientId(null);
+                    }}
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white font-medium"
                   />
                 </div>
               </div>
+
+              {/* Data de Nascimento */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-[#0B1B4A]" />
+                  Data de Nascimento (Opcional)
+                </label>
+                <input
+                  type="date"
+                  value={clienteDataNascimento}
+                  onChange={(e) => setClienteDataNascimento(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white text-slate-700 font-medium"
+                />
+              </div>
             </div>
+
+            {/* Informative Status Badge */}
+            {selectedClientId ? (
+              <div className="flex items-center justify-between gap-2 text-[11px] text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  Cliente da base vinculado: {selectedClientObj?.nome}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetToNewClient}
+                  className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 underline hover:no-underline"
+                >
+                  Novo / Desvincular
+                </button>
+              </div>
+            ) : clienteNome.trim().length > 0 ? (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-600 bg-slate-100/90 px-3 py-1.5 rounded-xl border border-slate-200/80">
+                <UserPlus className="w-3.5 h-3.5 text-[#0B1B4A] shrink-0" />
+                <span>Novo cliente: será cadastrado automaticamente na base ao salvar esta OS.</span>
+              </div>
+            ) : null}
           </div>
 
           {/* Grupo 2: Aparelho */}
           <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#0B1B4A] flex items-center gap-1.5">
-              <Smartphone className="w-3.5 h-3.5 text-[#0B1B4A]" />
-              Dados do Aparelho
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#0B1B4A] flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-[#0B1B4A]" />
+                Dados do Aparelho
+              </span>
+              {selectedClientObj?.devices && selectedClientObj.devices.length > 0 && (
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {selectedClientObj.devices.length} aparelho{selectedClientObj.devices.length > 1 ? 's' : ''} deste cliente
+                </span>
+              )}
+            </div>
+
+            {/* Quick selector for existing client's devices */}
+            {selectedClientObj?.devices && selectedClientObj.devices.length > 0 && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Aparelhos já registrados deste cliente:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDevice('')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all border ${
+                      !selectedDeviceId
+                        ? 'bg-[#0B1B4A] text-white border-[#0B1B4A] shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    + Novo Aparelho
+                  </button>
+                  {selectedClientObj.devices.map((dev) => {
+                    const isDevSelected = selectedDeviceId === dev.id;
+                    return (
+                      <button
+                        key={dev.id}
+                        type="button"
+                        onClick={() => handleSelectDevice(dev.id)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all border ${
+                          isDevSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {dev.marca} {dev.modelo}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Quick Brand Selector Chips */}
             <div>
@@ -292,7 +688,7 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
                   placeholder="Ex: iPhone 13 / Galaxy S23"
                   value={aparelhoModelo}
                   onChange={(e) => setAparelhoModelo(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#0B1B4A] focus:ring-2 focus:ring-[#0B1B4A]/10 outline-none text-sm bg-white font-medium"
                 />
               </div>
 
@@ -474,3 +870,4 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({ isOpen, onClose, onSucce
     </div>
   );
 };
+
