@@ -41,6 +41,19 @@ interface PhotoItem {
 
 const COMMON_BRANDS = ['Apple', 'Samsung', 'Xiaomi', 'Motorola', 'Outro'];
 
+const formatPhoneDisplay = (val: string) => {
+  const cleaned = (val || '').replace(/\D/g, '');
+  let formatted = cleaned;
+  if (cleaned.length > 2 && cleaned.length <= 6) {
+    formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2)}`;
+  } else if (cleaned.length > 6 && cleaned.length <= 10) {
+    formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
+  } else if (cleaned.length > 10) {
+    formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7, 11)}`;
+  }
+  return formatted;
+};
+
 export const NewOSModal: React.FC<NewOSModalProps> = ({
   isOpen,
   onClose,
@@ -60,7 +73,7 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
 
   // Form State
   const [clienteNome, setClienteNome] = useState(initialClient?.nome || '');
-  const [clienteTelefone, setClienteTelefone] = useState(initialClient?.telefone || '');
+  const [clienteTelefone, setClienteTelefone] = useState(initialClient?.telefone ? formatPhoneDisplay(initialClient.telefone) : '');
   const [clienteDataNascimento, setClienteDataNascimento] = useState(initialClient?.data_nascimento || '');
   const [aparelhoMarca, setAparelhoMarca] = useState('Apple');
   const [aparelhoModelo, setAparelhoModelo] = useState('');
@@ -80,6 +93,38 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper to reset all form fields
+  const clearAllFormFields = (prefillClient?: { id?: string; nome: string; telefone: string; data_nascimento?: string | null } | null) => {
+    if (prefillClient) {
+      setSelectedClientId(prefillClient.id || null);
+      setClienteNome(prefillClient.nome || '');
+      setClienteTelefone(formatPhoneDisplay(prefillClient.telefone || ''));
+      setClienteDataNascimento(prefillClient.data_nascimento || '');
+    } else {
+      setSelectedClientId(null);
+      setClienteNome('');
+      setClienteTelefone('');
+      setClienteDataNascimento('');
+    }
+    setSelectedDeviceId(null);
+    setShowClientSuggestions(false);
+    setAparelhoMarca('Apple');
+    setAparelhoModelo('');
+    setAparelhoImei('');
+    setShowImei(false);
+    setValor('');
+    setDescricaoServico('');
+    setChecklist({});
+    setPhotos([]);
+    setSelectedPhotoCategory('entrada');
+    setError(null);
+  };
+
+  const handleClose = () => {
+    clearAllFormFields(null);
+    onClose();
+  };
+
   // Close suggestions when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -93,9 +138,12 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
     };
   }, []);
 
-  // Load clients when modal opens
+  // Reset and load clients when modal opens
   useEffect(() => {
     if (!isOpen) return;
+
+    // Guarantee that form starts completely clean (or populated only with the target initialClient)
+    clearAllFormFields(initialClient);
 
     const loadExistingClients = async () => {
       setLoadingClients(true);
@@ -114,14 +162,14 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
             if (matched) {
               setSelectedClientId(matched.id);
               setClienteNome(matched.nome);
-              setClienteTelefone(handlePhoneFormat(matched.telefone));
+              setClienteTelefone(formatPhoneDisplay(matched.telefone));
               if (matched.data_nascimento) {
                 setClienteDataNascimento(matched.data_nascimento);
               }
             } else {
               setSelectedClientId(initialClient.id || null);
               setClienteNome(initialClient.nome);
-              setClienteTelefone(handlePhoneFormat(initialClient.telefone));
+              setClienteTelefone(formatPhoneDisplay(initialClient.telefone));
               if (initialClient.data_nascimento) {
                 setClienteDataNascimento(initialClient.data_nascimento);
               }
@@ -141,16 +189,7 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
   if (!isOpen) return null;
 
   const handlePhoneFormat = (val: string) => {
-    const cleaned = (val || '').replace(/\D/g, '');
-    let formatted = cleaned;
-    if (cleaned.length > 2 && cleaned.length <= 6) {
-      formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2)}`;
-    } else if (cleaned.length > 6 && cleaned.length <= 10) {
-      formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
-    } else if (cleaned.length > 10) {
-      formatted = `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7, 11)}`;
-    }
-    return formatted;
+    return formatPhoneDisplay(val);
   };
 
   const handlePhoneChange = (val: string) => {
@@ -310,6 +349,7 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
       }
 
       onSuccess(createdOS);
+      clearAllFormFields(null);
       onClose();
     } catch (err: any) {
       console.error(err);
@@ -340,7 +380,7 @@ export const NewOSModal: React.FC<NewOSModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-white p-1.5 rounded-xl transition-colors hover:bg-white/10"
           >
             <X className="w-5 h-5" />

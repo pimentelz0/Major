@@ -101,17 +101,21 @@ function MainApp() {
       </main>
 
       {/* Modals */}
-      <NewOSModal
-        isOpen={isNewOSOpen}
-        initialClient={initialClientForOS}
-        onClose={() => {
-          setIsNewOSOpen(false);
-          setInitialClientForOS(null);
-        }}
-        onSuccess={() => {
-          setLastUpdated(Date.now());
-        }}
-      />
+      {isNewOSOpen && (
+        <NewOSModal
+          isOpen={isNewOSOpen}
+          initialClient={initialClientForOS}
+          onClose={() => {
+            setIsNewOSOpen(false);
+            setInitialClientForOS(null);
+          }}
+          onSuccess={() => {
+            setIsNewOSOpen(false);
+            setInitialClientForOS(null);
+            setLastUpdated(Date.now());
+          }}
+        />
+      )}
 
       <OSDetailModal
         os={selectedOS}

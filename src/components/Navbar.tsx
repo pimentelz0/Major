@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Smartphone, Users, Database, LogOut, ChevronRight } from 'lucide-react';
+import { Menu, X, Smartphone, Users, Database, LogOut, ChevronRight, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { BirthdayNotificationBell } from './BirthdayNotificationBell';
+import { InstallAppModal } from './InstallAppModal';
 
 interface NavbarProps {
   activeTab: 'os' | 'clientes';
@@ -18,6 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, signOut } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   // Close menu on Escape key press
   useEffect(() => {
@@ -69,43 +71,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Right: Quick Actions & Technician Profile */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* SQL Setup Script Viewer */}
+          {/* Right: Quick Actions */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Birthday Notification Bell */}
+            <BirthdayNotificationBell lastUpdated={lastUpdated} />
+
+            {/* Logout */}
             <button
-              onClick={onOpenSqlModal}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-slate-200 hover:text-white transition-all border border-white/10"
-              title="Ver/Copiar Script SQL do Banco Supabase"
+              onClick={() => signOut()}
+              className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              title="Sair do sistema"
+              id="btn-logout"
             >
-              <Database className="w-3.5 h-3.5 text-white" />
-              <span>SQL Supabase</span>
+              <LogOut className="w-5 h-5" />
             </button>
-
-            {/* Technician / Notifications / Logout */}
-            <div className="flex items-center gap-1.5 sm:gap-2 pl-2 border-l border-white/15">
-              <div className="hidden md:block text-right pr-1">
-                <div className="text-xs font-semibold leading-tight truncate max-w-[140px] text-white">
-                  {user?.email?.split('@')[0] || 'Técnico'}
-                </div>
-                <div className="text-[10px] text-emerald-400 font-semibold tracking-wide flex items-center justify-end gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Online
-                </div>
-              </div>
-
-              {/* Birthday Notification Bell */}
-              <BirthdayNotificationBell lastUpdated={lastUpdated} />
-
-              {/* Logout */}
-              <button
-                onClick={() => signOut()}
-                className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                title="Sair do sistema"
-                id="btn-logout"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </div>
           </div>
         </div>
       </header>
@@ -125,15 +104,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Drawer Header */}
             <div className="p-5 border-b border-white/15 flex items-center justify-between bg-black/15">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-white text-[#0B1B4A] flex items-center justify-center font-black text-lg shadow-md">
-                  M
-                </div>
+                <img
+                  src="/pwa-192x192.png"
+                  alt="Logo MAJOR"
+                  className="w-10 h-10 rounded-2xl shadow-md border border-white/20 flex-shrink-0"
+                />
                 <div>
                   <h2 className="font-extrabold text-base tracking-tight leading-tight text-white">
                     MAJOR
                   </h2>
                   <p className="text-[10px] font-bold text-white/70 tracking-wider uppercase">
-                    Menu do Sistema
+                    Assistência Técnica
                   </p>
                 </div>
               </div>
@@ -227,10 +208,72 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
                 />
               </button>
+
+              {/* PWA Section */}
+              <div className="pt-3 border-t border-white/10 mt-3 space-y-2">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-white/50 px-3 py-1">
+                  Aplicativo Móvel
+                </div>
+
+                <button
+                  type="button"
+                  id="menu-btn-install-app"
+                  onClick={() => {
+                    setIsInstallModalOpen(true);
+                    setIsMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl transition-all font-bold text-sm text-white/90 hover:text-white hover:bg-white/10 border border-white/10 bg-white/5"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                      <Download className="w-5 h-5" />
+                    </div>
+                    <div className="text-left">
+                      <div className="leading-tight text-white">Instalar Aplicativo</div>
+                      <div className="text-[11px] font-normal text-slate-300">
+                        Adicionar à Tela Inicial
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-white/40" />
+                </button>
+              </div>
+            </div>
+
+            {/* Drawer Footer (User Session & Logout) */}
+            <div className="p-4 border-t border-white/15 bg-black/20 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                  {user?.email?.charAt(0).toUpperCase() || 'T'}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-white truncate">
+                    {user?.email || 'Técnico'}
+                  </p>
+                  <p className="text-[10px] text-emerald-400 font-medium">Sessão ativa</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  signOut();
+                }}
+                className="p-2 rounded-xl text-slate-300 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+                title="Sair do sistema"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* In-App Installation Modal */}
+      <InstallAppModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+      />
     </>
   );
 };
